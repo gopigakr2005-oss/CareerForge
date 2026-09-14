@@ -25,7 +25,7 @@ import {
   Save,
 } from 'lucide-react';
 import { resumeDataToText } from '../../services/atsAnalyzer';
-import html2canvas from 'html2canvas';
+import html2canvas from 'html2canvas-pro';
 import { jsPDF } from 'jspdf';
 
 interface Props {
@@ -63,8 +63,8 @@ export const ResumePreview: React.FC<Props> = ({ data, theme, onThemeChange, onU
   const handleDownloadDirectPdf = async () => {
     setIsDownloadingPdf(true);
     try {
-      // Brief pause to allow the dedicated capture element to render with full styles & webfonts
-      await new Promise((resolve) => setTimeout(resolve, 150));
+      // Brief pause to allow the dedicated capture element to mount, layout and load webfonts
+      await new Promise((resolve) => setTimeout(resolve, 250));
 
       const captureElement = pdfCaptureRef.current;
       if (!captureElement) {
@@ -79,6 +79,8 @@ export const ResumePreview: React.FC<Props> = ({ data, theme, onThemeChange, onU
         backgroundColor: '#ffffff',
         width: 794,
         windowWidth: 1024,
+        scrollX: 0,
+        scrollY: 0,
       });
 
       const pdf = new jsPDF({
@@ -144,7 +146,8 @@ export const ResumePreview: React.FC<Props> = ({ data, theme, onThemeChange, onU
       pdf.save(fileName);
     } catch (err) {
       console.error('Direct PDF export error:', err);
-      alert('Unable to generate direct PDF download. Please try again or use the Print button to save as PDF.');
+      const errMsg = err instanceof Error ? err.message : String(err);
+      alert(`Unable to generate direct PDF: ${errMsg}. Please try using the Print button to save as PDF.`);
     } finally {
       setIsDownloadingPdf(false);
     }
@@ -201,29 +204,29 @@ export const ResumePreview: React.FC<Props> = ({ data, theme, onThemeChange, onU
   return (
     <>
       {/* High-Resolution Dedicated Capture Element for Direct PDF Generation */}
-      <div
-        ref={pdfCaptureRef}
-        id="resume-pdf-capture-container"
-        className="no-print"
-        style={{
-          position: 'fixed',
-          left: isDownloadingPdf ? 0 : '-9999px',
-          top: 0,
-          width: '794px', // Standard 210mm @ 96 DPI
-          background: '#ffffff',
-          zIndex: isDownloadingPdf ? 99999 : -1,
-          opacity: isDownloadingPdf ? 1 : 0,
-          pointerEvents: 'none',
-          boxSizing: 'border-box',
-        }}
-      >
-        <UniversalResumeRenderer
-          data={data}
-          theme={theme}
-          onUpdateData={onUpdateData}
-          id="resume-pdf-capture-renderer"
-        />
-      </div>
+      {isDownloadingPdf && (
+        <div
+          ref={pdfCaptureRef}
+          id="resume-pdf-capture-container"
+          className="no-print"
+          style={{
+            position: 'fixed',
+            left: 0,
+            top: 0,
+            width: '794px', // Standard 210mm @ 96 DPI
+            background: '#ffffff',
+            zIndex: 99998,
+            boxSizing: 'border-box',
+          }}
+        >
+          <UniversalResumeRenderer
+            data={data}
+            theme={theme}
+            onUpdateData={onUpdateData}
+            id="resume-pdf-capture-renderer"
+          />
+        </div>
+      )}
 
       {/* PDF Generation Progress Modal */}
       {isDownloadingPdf && (
