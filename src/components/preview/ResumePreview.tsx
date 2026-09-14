@@ -63,14 +63,48 @@ export const ResumePreview: React.FC<Props> = ({ data, theme, onThemeChange, onU
     if (!resumeRef.current) return;
     setIsDownloadingPdf(true);
     try {
-      const element = resumeRef.current;
-      const canvas = await html2canvas(element, {
-        scale: 2, // High resolution (crisp 300 DPI)
+      const sourceElement = resumeRef.current;
+
+      // Render into a clean, unconstrained off-screen A4 container to prevent viewport/scroll clipping
+      const container = document.createElement('div');
+      container.style.position = 'fixed';
+      container.style.left = '-10000px';
+      container.style.top = '0';
+      container.style.width = '794px'; // 210mm @ 96 DPI
+      container.style.background = '#ffffff';
+      container.style.margin = '0';
+      container.style.padding = '0';
+      container.style.zIndex = '-99999';
+      container.style.boxSizing = 'border-box';
+
+      const clone = sourceElement.cloneNode(true) as HTMLElement;
+      clone.style.transform = 'none';
+      clone.style.width = '100%';
+      clone.style.maxWidth = '794px';
+      clone.style.height = 'auto';
+      clone.style.minHeight = '1123px';
+      clone.style.boxShadow = 'none';
+      clone.style.border = 'none';
+      clone.style.margin = '0';
+      clone.style.borderRadius = '0';
+
+      container.appendChild(clone);
+      document.body.appendChild(container);
+
+      // Brief pause to allow fonts and layout to compute in clone
+      await new Promise((r) => setTimeout(r, 60));
+
+      const canvas = await html2canvas(clone, {
+        scale: 2, // 300 DPI high resolution
         useCORS: true,
+        allowTaint: true,
         logging: false,
         backgroundColor: '#ffffff',
+        width: 794,
         windowWidth: 1024,
       });
+
+      document.body.removeChild(container);
 
       const imgData = canvas.toDataURL('image/jpeg', 0.98);
       const pdf = new jsPDF({
@@ -79,29 +113,33 @@ export const ResumePreview: React.FC<Props> = ({ data, theme, onThemeChange, onU
         format: 'a4',
       });
 
-      const pdfWidth = 210;
-      const pdfHeight = 297;
-      const canvasWidth = canvas.width;
-      const canvasHeight = canvas.height;
-      const totalPdfHeight = (canvasHeight * pdfWidth) / canvasWidth;
+      const a4Width = 210;
+      const a4Height = 297;
+      const totalPdfHeight = (canvas.height * a4Width) / canvas.width;
 
-      if (theme.fitToOnePage || totalPdfHeight <= pdfHeight + 5) {
-        // Single Page exact fit
-        const renderHeight = theme.fitToOnePage && totalPdfHeight > pdfHeight ? pdfHeight : totalPdfHeight;
-        pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, renderHeight);
+      if (theme.fitToOnePage || totalPdfHeight <= a4Height + 3) {
+        // Single Page: if content is slightly taller than 297mm, scale proportionally so 100% of content fits without clipping
+        if (totalPdfHeight > a4Height) {
+          const scale = a4Height / totalPdfHeight;
+          const scaledWidth = a4Width * scale;
+          const xOffset = (a4Width - scaledWidth) / 2;
+          pdf.addImage(imgData, 'JPEG', xOffset, 0, scaledWidth, a4Height);
+        } else {
+          pdf.addImage(imgData, 'JPEG', 0, 0, a4Width, totalPdfHeight);
+        }
       } else {
-        // Multi-page clean slicing
-        let heightLeft = totalPdfHeight;
-        let position = 0;
+        // Multi-page clean slicing: Page 1, Page 2, Page 3 etc. with zero cut-off
+        let heightRemaining = totalPdfHeight;
+        let page = 0;
 
-        pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, totalPdfHeight);
-        heightLeft -= pdfHeight;
-
-        while (heightLeft > 0) {
-          position = heightLeft - totalPdfHeight;
-          pdf.addPage();
-          pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, totalPdfHeight);
-          heightLeft -= pdfHeight;
+        while (heightRemaining > 0) {
+          if (page > 0) {
+            pdf.addPage();
+          }
+          const yPosition = -page * a4Height;
+          pdf.addImage(imgData, 'JPEG', 0, yPosition, a4Width, totalPdfHeight);
+          heightRemaining -= a4Height;
+          page++;
         }
       }
 
@@ -429,8 +467,8 @@ export const ResumePreview: React.FC<Props> = ({ data, theme, onThemeChange, onU
 
       {/* Fullscreen Preview Modal */}
       {isFullscreen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex flex-col p-4">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-800 max-w-5xl w-full mx-auto text-white">
+        <div className="fixed inset-0 z-50 bg-slate-950 flex flex-col p-4 overflow-hidden">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-800 max-w-5xl w-full mx-auto text-white shrink-0">
             <div className="flex items-center gap-2">
               <span className="font-bold text-sm">Full Screen Preview</span>
               <span className="text-xs text-slate-400">• {data.personalInfo.fullName || 'Resume'}</span>
@@ -439,27 +477,27 @@ export const ResumePreview: React.FC<Props> = ({ data, theme, onThemeChange, onU
               <button
                 onClick={handleDownloadDirectPdf}
                 disabled={isDownloadingPdf}
-                className="flex items-center gap-1.5 text-xs bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-3.5 py-1.5 rounded-lg font-medium shadow"
+                className="flex items-center gap-1.5 text-xs bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-3.5 py-1.5 rounded-lg font-medium shadow cursor-pointer"
               >
                 {isDownloadingPdf ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
                 Download PDF
               </button>
               <button
                 onClick={handleExportPdf}
-                className="flex items-center gap-1.5 text-xs bg-slate-800 hover:bg-slate-750 text-slate-200 px-3 py-1.5 rounded-lg font-medium border border-slate-700"
+                className="flex items-center gap-1.5 text-xs bg-slate-800 hover:bg-slate-750 text-slate-200 px-3 py-1.5 rounded-lg font-medium border border-slate-700 cursor-pointer"
               >
                 <Printer className="w-3.5 h-3.5" /> Print
               </button>
               <button
                 onClick={() => setIsFullscreen(false)}
-                className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg"
+                className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
           </div>
-          <div className="flex-1 overflow-auto p-6 flex justify-center items-start">
-            <div className="max-w-3xl w-full bg-white rounded shadow-2xl">
+          <div className="flex-1 overflow-auto p-4 sm:p-6 flex justify-center items-start bg-slate-900/50">
+            <div className="resume-paper resume-page max-w-3xl w-full bg-white rounded-sm shadow-2xl text-slate-900 border border-slate-200" id="resume-document-fullscreen">
               <UniversalResumeRenderer data={data} theme={theme} onUpdateData={onUpdateData} />
             </div>
           </div>

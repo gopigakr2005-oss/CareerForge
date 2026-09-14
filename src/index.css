@@ -17,47 +17,52 @@
 /* Custom Print Rules for Resume Export */
 @media print {
   html, body {
-    background: white !important;
+    background: #ffffff !important;
     color: #0f172a !important;
     margin: 0 !important;
     padding: 0 !important;
     width: 100% !important;
     height: auto !important;
+    min-height: auto !important;
     overflow: visible !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
+  }
+
+  /* Hide the entire interactive web app UI */
+  body * {
+    visibility: hidden !important;
   }
 
   .no-print {
     display: none !important;
   }
 
-  .print-only {
-    display: block !important;
+  /* Reveal ONLY the resume document and all its children */
+  #resume-document,
+  #resume-document *,
+  #resume-document-fullscreen,
+  #resume-document-fullscreen * {
+    visibility: visible !important;
   }
 
-  /* Reset all overflow and transforms that clip PDF print content */
-  #root, main, .preview-canvas-wrapper, .preview-transform-container {
-    overflow: visible !important;
-    height: auto !important;
-    max-height: none !important;
-    transform: none !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    display: block !important;
-    width: 100% !important;
-  }
-
-  .resume-page, .resume-paper {
-    box-shadow: none !important;
-    border: none !important;
-    margin: 0 auto !important;
-    padding: 0 !important;
+  /* Position the isolated resume at top left of physical paper */
+  #resume-document,
+  #resume-document-fullscreen {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
     width: 100% !important;
     max-width: 210mm !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    overflow: visible !important;
     height: auto !important;
     min-height: auto !important;
-    overflow: visible !important;
   }
 
   /* Prevent sections and bullet items from being cut in half across pages */
@@ -72,7 +77,7 @@
 
   @page {
     size: A4 portrait;
-    margin: 10mm 10mm 10mm 10mm;
+    margin: 8mm 10mm;
   }
 }
 
