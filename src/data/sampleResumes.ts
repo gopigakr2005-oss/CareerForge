@@ -210,6 +210,12 @@ export const DEFAULT_THEME: ResumeTheme = {
   primaryColor: '#2563eb', // Blue 600
   fontFamily: 'inter',
   spacing: 'normal',
+  fitToOnePage: false,
+  dividerStyle: 'solid',
+  showVerticalDividers: true,
+  textAlign: 'left',
+  boldHeadings: true,
+  directEditMode: false,
 };
 
 export const SAMPLE_JOB_DESCRIPTION = `

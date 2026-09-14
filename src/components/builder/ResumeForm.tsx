@@ -36,6 +36,7 @@ import {
   EyeOff,
   TrendingUp,
   Target,
+  Save,
 } from 'lucide-react';
 import { suggestSkillsForRole, rewriteBulletPointMode } from '../../services/geminiService';
 import { QuantificationModal } from '../modals/QuantificationModal';
@@ -46,6 +47,8 @@ interface Props {
   data: ResumeData;
   onChange: (data: ResumeData) => void;
   onOpenAiEnhance: (type: 'bullet' | 'summary', text: string, role?: string, onApply?: (val: string) => void) => void;
+  onSave?: () => void;
+  lastSavedTime?: string | null;
 }
 
 type TabType =
@@ -67,7 +70,13 @@ type TabType =
   | 'custom'
   | 'sections';
 
-export const ResumeForm: React.FC<Props> = ({ data, onChange, onOpenAiEnhance }) => {
+export const ResumeForm: React.FC<Props> = ({
+  data,
+  onChange,
+  onOpenAiEnhance,
+  onSave,
+  lastSavedTime,
+}) => {
   const [activeTab, setActiveTab] = useState<TabType>('personal');
   const [suggestingSkills, setSuggestingSkills] = useState(false);
   const [newSkillInputs, setNewSkillInputs] = useState<Record<string, string>>({});
@@ -592,10 +601,28 @@ export const ResumeForm: React.FC<Props> = ({ data, onChange, onOpenAiEnhance })
           </button>
         </div>
 
-        {/* Anti-fabrication indicator */}
-        <div className="flex items-center gap-1.5 text-emerald-400 font-medium text-[11px]">
-          <ShieldCheck className="w-3.5 h-3.5" />
-          <span>Truth Mode: Never fabricates</span>
+        <div className="flex items-center gap-2.5">
+          {onSave && (
+            <button
+              onClick={onSave}
+              className="flex items-center gap-1.5 px-3 py-1 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 rounded-lg font-semibold transition cursor-pointer shadow-xs"
+              title={lastSavedTime ? `Last saved locally at ${lastSavedTime}. Click to save progress.` : 'Save resume progress to browser storage'}
+            >
+              <Save className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Save Progress</span>
+              {lastSavedTime && (
+                <span className="hidden sm:inline text-[10px] text-emerald-400/80 font-normal">
+                  ({lastSavedTime})
+                </span>
+              )}
+            </button>
+          )}
+
+          {/* Anti-fabrication indicator */}
+          <div className="flex items-center gap-1.5 text-emerald-400 font-medium text-[11px] hidden md:flex">
+            <ShieldCheck className="w-3.5 h-3.5" />
+            <span>Truth Mode: Never fabricates</span>
+          </div>
         </div>
       </div>
 

@@ -18,6 +18,7 @@ import {
   AlertTriangle,
   XCircle,
   FileCheck2,
+  FileText,
   TrendingUp,
   Sparkles,
   Search,
@@ -50,6 +51,10 @@ export const AtsChecker: React.FC<Props> = ({
   const [selectedRole, setSelectedRole] = useState<TargetRole>('data-scientist');
   const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel>('fresher');
   const [checkMode, setCheckMode] = useState<AtsCheckMode>('role-preset');
+
+  // Active view tab: report vs raw ATS plain-text parser preview
+  const [resultsTab, setResultsTab] = useState<'report' | 'raw-ats'>('report');
+  const [copiedAtsText, setCopiedAtsText] = useState<boolean>(false);
 
   // Input Text State
   const [sourceMode, setSourceMode] = useState<'current' | 'custom'>('current');
@@ -85,7 +90,8 @@ export const AtsChecker: React.FC<Props> = ({
       activeBullets,
       currentBenchmark,
       experienceLevel,
-      checkMode
+      checkMode,
+      sourceMode === 'current' ? currentResume : undefined
     )
   );
 
@@ -98,7 +104,8 @@ export const AtsChecker: React.FC<Props> = ({
         activeBullets,
         currentBenchmark,
         experienceLevel,
-        checkMode
+        checkMode,
+        sourceMode === 'current' ? currentResume : undefined
       );
       setResults(res);
       setIsScanning(false);
@@ -437,128 +444,217 @@ export const AtsChecker: React.FC<Props> = ({
         )}
       </div>
 
-      {/* Main Results Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column: Overall Score Meter & Category Gauges */}
-        <div className="space-y-6">
-          {/* Radial Score Card */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 text-center relative overflow-hidden shadow-xl">
-            <div className="flex items-center justify-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-400 mb-4">
-              <span>Overall ATS Score</span>
-              <span className="text-blue-400">•</span>
-              <span className="text-slate-300">{currentBenchmark.title}</span>
-            </div>
+      {/* View Mode Tab Switcher: Compliance Report vs Simulated Raw ATS Parser View */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-slate-900 border border-slate-800 p-2.5 rounded-2xl shadow-md">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setResultsTab('report')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${
+              resultsTab === 'report'
+                ? 'bg-blue-600 text-white shadow-md shadow-blue-900/30'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800'
+            }`}
+          >
+            <FileCheck2 className="w-3.5 h-3.5" />
+            <span>ATS Compliance Report</span>
+          </button>
+          <button
+            onClick={() => setResultsTab('raw-ats')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${
+              resultsTab === 'raw-ats'
+                ? 'bg-blue-600 text-white shadow-md shadow-blue-900/30'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800'
+            }`}
+          >
+            <FileText className="w-3.5 h-3.5" />
+            <span>Simulated Raw ATS Parser View</span>
+          </button>
+        </div>
 
-            {/* Circular Gauge */}
-            <div className="relative w-40 h-40 mx-auto flex items-center justify-center">
-              <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
-                <circle
-                  cx="50"
-                  cy="50"
-                  r="40"
-                  className="stroke-slate-800"
-                  strokeWidth="8"
-                  fill="transparent"
-                />
-                <circle
-                  cx="50"
-                  cy="50"
-                  r="40"
-                  className={getScoreColor(results.overallScore)}
-                  strokeWidth="8"
-                  fill="transparent"
-                  strokeDasharray={2 * Math.PI * 40}
-                  strokeDashoffset={2 * Math.PI * 40 * (1 - results.overallScore / 100)}
-                  strokeLinecap="round"
-                  style={{ transition: 'stroke-dashoffset 0.8s ease-in-out' }}
-                />
-              </svg>
-              <div className="absolute flex flex-col items-center justify-center">
-                <span className="text-4xl font-black text-white font-mono">{results.overallScore}</span>
-                <span className="text-[11px] text-slate-400 uppercase font-medium mt-0.5">out of 100</span>
-              </div>
-            </div>
+        <div className="text-[11px] text-slate-400 flex items-center gap-1.5 px-2">
+          <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+          <span>6-Category Weighted ATS Algorithm (100% Calibrated)</span>
+        </div>
+      </div>
 
-            {/* Rating Tag */}
-            <div className="mt-4">
-              <span
-                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${getScoreBg(
-                  results.overallScore
-                )}`}
-              >
-                <ShieldCheck className="w-3.5 h-3.5" />
-                {results.overallScore >= 80
-                  ? 'Strong ATS Pass Rate'
-                  : results.overallScore >= 65
-                  ? 'Good - Minor Tweaks Needed'
-                  : 'Needs ATS Optimization'}
-              </span>
-            </div>
-
-            {/* Calibration Notice */}
-            <div className="mt-3 text-[11px] text-slate-400">
-              Calibrated for: <span className="text-white font-semibold capitalize">{experienceLevel}</span>
-              {experienceLevel === 'fresher' && (
-                <span className="text-emerald-400 block mt-0.5">✓ No work experience penalty</span>
-              )}
-            </div>
-
-            {/* Metric Highlights */}
-            <div className="grid grid-cols-2 gap-2 mt-5 pt-4 border-t border-slate-800 text-xs">
-              <div className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
-                <div className="text-slate-400 text-[10px] uppercase">Core Skills Matched</div>
-                <div className="text-base font-bold text-white font-mono mt-0.5">
-                  {results.matchedRoleSkills.length} / {currentBenchmark.coreSkills.length}
-                </div>
-              </div>
-              <div className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
-                <div className="text-slate-400 text-[10px] uppercase">Quantified Bullets</div>
-                <div className="text-base font-bold text-white font-mono mt-0.5">
-                  {results.quantifiedRatio}%
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Role & Level Readiness Checklist */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-              <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                <span>{experienceLevel === 'fresher' ? 'Fresher Readiness Checklist' : 'Professional ATS Checklist'}</span>
+      {/* Tab 1: Simulated Raw ATS Parser View */}
+      {resultsTab === 'raw-ats' ? (
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+            <div>
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <FileText className="w-4 h-4 text-blue-400" />
+                <span>Simulated Enterprise ATS Plain-Text Stream</span>
               </h3>
+              <p className="text-xs text-slate-400 mt-1">
+                Enterprise ATS software (Workday, Taleo, Greenhouse, Lever) converts formatted resumes into plain text before scanning.
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                if (results.rawAtsText) {
+                  navigator.clipboard.writeText(results.rawAtsText);
+                  setCopiedAtsText(true);
+                  setTimeout(() => setCopiedAtsText(false), 2000);
+                }
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition self-start sm:self-auto cursor-pointer"
+            >
+              {copiedAtsText ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="text-emerald-400">Copied Plain Text!</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>Copy ATS Plain Text</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          <pre className="p-4 bg-slate-950 border border-slate-800/80 rounded-xl text-xs text-slate-300 font-mono overflow-x-auto whitespace-pre-wrap leading-relaxed max-h-[600px]">
+            {results.rawAtsText}
+          </pre>
+        </div>
+      ) : (
+        /* Tab 2: Main Results Grid */
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left Column: Overall Score Meter & Category Gauges */}
+          <div className="space-y-6">
+            {/* Radial Score Card */}
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 text-center relative overflow-hidden shadow-xl">
+              <div className="flex items-center justify-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-400 mb-4">
+                <span>Overall ATS Score</span>
+                <span className="text-blue-400">•</span>
+                <span className="text-slate-300">{currentBenchmark.title}</span>
+              </div>
+
+              {/* Circular Gauge */}
+              <div className="relative w-40 h-40 mx-auto flex items-center justify-center">
+                <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r="40"
+                    className="stroke-slate-800"
+                    strokeWidth="8"
+                    fill="transparent"
+                  />
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r="40"
+                    className={getScoreColor(results.overallScore)}
+                    strokeWidth="8"
+                    fill="transparent"
+                    strokeDasharray={2 * Math.PI * 40}
+                    strokeDashoffset={2 * Math.PI * 40 * (1 - results.overallScore / 100)}
+                    strokeLinecap="round"
+                    style={{ transition: 'stroke-dashoffset 0.8s ease-in-out' }}
+                  />
+                </svg>
+                <div className="absolute flex flex-col items-center justify-center">
+                  <span className="text-4xl font-black text-white font-mono">{results.overallScore}</span>
+                  <span className="text-[11px] text-slate-400 uppercase font-medium mt-0.5">out of 100</span>
+                </div>
+              </div>
+
+              {/* Rating Tag */}
+              <div className="mt-4">
+                <span
+                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${getScoreBg(
+                    results.overallScore
+                  )}`}
+                >
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  {results.overallScore >= 80
+                    ? 'Strong ATS Pass Rate'
+                    : results.overallScore >= 65
+                    ? 'Good - Minor Tweaks Needed'
+                    : 'Needs ATS Optimization'}
+                </span>
+              </div>
+
+              {/* Calibration Notice */}
+              <div className="mt-3 text-[11px] text-slate-400">
+                Calibrated for: <span className="text-white font-semibold capitalize">{experienceLevel}</span>
+                {experienceLevel === 'fresher' && (
+                  <span className="text-emerald-400 block mt-0.5">✓ No work experience penalty</span>
+                )}
+              </div>
+
+              {/* Metric Highlights */}
+              <div className="grid grid-cols-2 gap-2 mt-5 pt-4 border-t border-slate-800 text-xs">
+                <div className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
+                  <div className="text-slate-400 text-[10px] uppercase">Core Skills Matched</div>
+                  <div className="text-base font-bold text-white font-mono mt-0.5">
+                    {results.matchedRoleSkills.length} / {currentBenchmark.coreSkills.length}
+                  </div>
+                </div>
+                <div className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
+                  <div className="text-slate-400 text-[10px] uppercase">Quantified Bullets</div>
+                  <div className="text-base font-bold text-white font-mono mt-0.5">
+                    {results.quantifiedRatio}%
+                  </div>
+                </div>
+              </div>
             </div>
 
-            <div className="space-y-3">
-              {results.checklist.map((item, idx) => (
-                <div
-                  key={idx}
-                  className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 space-y-1 text-xs"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-white flex items-center gap-1.5">
-                      {item.passed ? (
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                      ) : (
-                        <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                      )}
-                      <span>{item.label}</span>
-                    </span>
-                    <span
-                      className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${
-                        item.passed
-                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                          : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-                      }`}
-                    >
-                      {item.passed ? 'Passed' : 'Attention'}
-                    </span>
+            {/* 10-Point Itemized ATS Audit Checklist */}
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>10-Point ATS Compliance Audit</span>
+                </h3>
+                <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+                  {results.checklist.filter((c) => c.passed).length} / {results.checklist.length} Passed
+                </span>
+              </div>
+
+              <div className="space-y-2.5">
+                {results.checklist.map((item, idx) => (
+                  <div
+                    key={idx}
+                    className={`p-3 rounded-xl border space-y-1 text-xs transition ${
+                      item.passed
+                        ? 'bg-slate-950/60 border-slate-800/80 hover:border-slate-700'
+                        : 'bg-amber-950/20 border-amber-500/30'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-white flex items-center gap-2">
+                        {item.passed ? (
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                        ) : (
+                          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                        )}
+                        <span>{item.label}</span>
+                      </span>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {item.category && (
+                          <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700 hidden sm:inline">
+                            {item.category}
+                          </span>
+                        )}
+                        <span
+                          className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${
+                            item.passed
+                              ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/25'
+                              : 'bg-amber-500/15 text-amber-400 border border-amber-500/25'
+                          }`}
+                        >
+                          {item.passed ? 'Passed' : 'Attention'}
+                        </span>
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-slate-400 leading-tight pl-6">{item.tip}</p>
                   </div>
-                  <p className="text-[11px] text-slate-400 leading-tight pl-5">{item.tip}</p>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
 
           {/* Category Breakdown Bars */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
@@ -793,6 +889,7 @@ export const AtsChecker: React.FC<Props> = ({
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 };

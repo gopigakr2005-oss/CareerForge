@@ -20,6 +20,7 @@ import confetti from 'canvas-confetti';
 const RESUME_STORAGE_KEY = 'CAREERFORGE_ACTIVE_RESUME_V2';
 const THEME_STORAGE_KEY = 'CAREERFORGE_ACTIVE_THEME_V2';
 const RESUMES_LIST_STORAGE_KEY = 'CAREERFORGE_RESUMES_LIST_V2';
+const LAST_SAVED_KEY = 'CAREERFORGE_LAST_SAVED_TIME_V2';
 
 const INITIAL_RESUMES_LIST: ResumeVersion[] = [
   {
@@ -110,6 +111,36 @@ export function App() {
       console.error('Failed to autosave resumes list', e);
     }
   }, [resumesList]);
+
+  // Explicit Save state & handler
+  const [lastSavedTime, setLastSavedTime] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(LAST_SAVED_KEY);
+    } catch (e) {
+      return null;
+    }
+  });
+
+  const handleSaveResume = () => {
+    try {
+      localStorage.setItem(RESUME_STORAGE_KEY, JSON.stringify(resumeData));
+      localStorage.setItem(THEME_STORAGE_KEY, JSON.stringify(resumeTheme));
+      localStorage.setItem(RESUMES_LIST_STORAGE_KEY, JSON.stringify(resumesList));
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      localStorage.setItem(LAST_SAVED_KEY, timeStr);
+      setLastSavedTime(timeStr);
+      showToast('💾 Resume saved! Progress is stored locally and will reload automatically whenever you return.');
+      confetti({
+        particleCount: 50,
+        spread: 60,
+        origin: { y: 0.2 },
+      });
+    } catch (e) {
+      console.error('Failed to save resume', e);
+      showToast('⚠️ Unable to save to browser storage.');
+    }
+  };
 
   // Modals state
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState<boolean>(false);
@@ -234,6 +265,8 @@ export function App() {
         }}
         onOpenApiKeyModal={() => setIsApiKeyModalOpen(true)}
         onOpenImportModal={() => setIsImportModalOpen(true)}
+        onSave={handleSaveResume}
+        lastSavedTime={lastSavedTime}
       />
 
       {/* Success Notification Banner */}
@@ -292,6 +325,8 @@ export function App() {
                   data={resumeData}
                   onChange={setResumeData}
                   onOpenAiEnhance={handleOpenAiEnhance}
+                  onSave={handleSaveResume}
+                  lastSavedTime={lastSavedTime}
                 />
               </div>
 
@@ -301,6 +336,8 @@ export function App() {
                   data={resumeData}
                   theme={resumeTheme}
                   onThemeChange={setResumeTheme}
+                  onUpdateData={setResumeData}
+                  onSave={handleSaveResume}
                 />
               </div>
             </div>

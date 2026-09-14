@@ -161,6 +161,120 @@ function textContainsSkill(text: string, skill: string): boolean {
 }
 
 /**
+ * Helper to generate a simulated raw plain-text output that ATS parsers extract
+ */
+export function generateRawAtsText(resumeText: string, resumeData?: ResumeData): string {
+  if (resumeData) {
+    const lines: string[] = [
+      '=================================================================',
+      '             SIMULATED RAW ATS PARSER EXTRACTOR',
+      '=================================================================',
+      `[CANDIDATE NAME] : ${resumeData.personalInfo.fullName || 'Not specified'}`,
+      `[TARGET ROLE]    : ${resumeData.personalInfo.jobTitle || 'Not specified'}`,
+      `[CONTACT INFO]   : ${resumeData.personalInfo.email || 'N/A'} | ${resumeData.personalInfo.phone || 'N/A'} | ${resumeData.personalInfo.location || 'N/A'}`,
+      `[ONLINE PROFILES]: ${[resumeData.personalInfo.linkedin, resumeData.personalInfo.github, resumeData.personalInfo.website].filter(Boolean).join(' | ') || 'None specified'}`,
+      '',
+      '-----------------------------------------------------------------',
+      'SECTION: PROFESSIONAL SUMMARY / ELEVATOR PITCH',
+      '-----------------------------------------------------------------',
+      resumeData.summary || '(No summary statement provided)',
+      '',
+      '-----------------------------------------------------------------',
+      'SECTION: TECHNICAL & PROFESSIONAL SKILLS',
+      '-----------------------------------------------------------------',
+    ];
+
+    if (resumeData.skills && resumeData.skills.length > 0) {
+      resumeData.skills.forEach((cat) => {
+        lines.push(`• [${cat.name.toUpperCase()}]: ${cat.skills.join(', ')}`);
+      });
+    } else {
+      lines.push('(No categorized skills detected)');
+    }
+
+    lines.push(
+      '',
+      '-----------------------------------------------------------------',
+      'SECTION: WORK EXPERIENCE & PROFESSIONAL HISTORY',
+      '-----------------------------------------------------------------'
+    );
+
+    if (resumeData.experience && resumeData.experience.length > 0) {
+      resumeData.experience.forEach((exp) => {
+        lines.push(`ROLE: ${exp.role} @ ${exp.company} (${exp.startDate} - ${exp.current ? 'Present' : exp.endDate}) | ${exp.location}`);
+        exp.highlights.forEach((h) => {
+          if (h.trim()) lines.push(`  - ${h}`);
+        });
+        lines.push('');
+      });
+    } else {
+      lines.push('(No corporate experience listed - evaluating projects & academia)');
+    }
+
+    if (resumeData.projects && resumeData.projects.length > 0) {
+      lines.push(
+        '-----------------------------------------------------------------',
+        'SECTION: TECHNICAL PROJECTS & CAPSTONES',
+        '-----------------------------------------------------------------'
+      );
+      resumeData.projects.forEach((proj) => {
+        lines.push(`PROJECT: ${proj.title} [Tech: ${proj.technologies.join(', ')}]`);
+        if (proj.subtitle) lines.push(`  Subtitle: ${proj.subtitle}`);
+        if (proj.description) lines.push(`  - ${proj.description}`);
+        lines.push('');
+      });
+    }
+
+    lines.push(
+      '-----------------------------------------------------------------',
+      'SECTION: EDUCATION & CREDENTIALS',
+      '-----------------------------------------------------------------'
+    );
+
+    if (resumeData.education && resumeData.education.length > 0) {
+      resumeData.education.forEach((edu) => {
+        lines.push(`DEGREE: ${edu.degree} in ${edu.fieldOfStudy} | ${edu.institution} (${edu.startDate} - ${edu.endDate})`);
+      });
+    } else {
+      lines.push('(No education records provided)');
+    }
+
+    if (resumeData.certifications && resumeData.certifications.length > 0) {
+      lines.push(
+        '',
+        '-----------------------------------------------------------------',
+        'SECTION: CERTIFICATIONS & LICENSES',
+        '-----------------------------------------------------------------'
+      );
+      resumeData.certifications.forEach((cert) => {
+        lines.push(`• ${cert.name} - Issued by ${cert.issuer} (${cert.date})`);
+      });
+    }
+
+    lines.push(
+      '',
+      '=================================================================',
+      'ATS PARSER DIAGNOSTIC: 100% Parseable Plain-Text Stream Formatted',
+      '================================================================='
+    );
+
+    return lines.join('\n');
+  }
+
+  // Fallback for raw text
+  return [
+    '=================================================================',
+    '             SIMULATED RAW ATS PARSER EXTRACTOR',
+    '=================================================================',
+    resumeText.trim(),
+    '',
+    '=================================================================',
+    'ATS PARSER DIAGNOSTIC: Unstructured Raw Text Stream Processed',
+    '================================================================='
+  ].join('\n');
+}
+
+/**
  * Core ATS Analysis Function with Role Benchmarking & Level Calibration
  */
 export function analyzeResume(
@@ -169,7 +283,8 @@ export function analyzeResume(
   bulletPointsList?: string[],
   roleBenchmark: RoleBenchmark = ROLE_BENCHMARKS['data-scientist'],
   experienceLevel: ExperienceLevel = 'fresher',
-  checkMode: AtsCheckMode = 'role-preset'
+  checkMode: AtsCheckMode = 'role-preset',
+  resumeData?: ResumeData
 ): AtsAnalysisResult {
   const cleanResume = resumeText.toLowerCase();
   const bullets =
@@ -200,9 +315,9 @@ export function analyzeResume(
   const words = cleanResume.match(/[a-z-]+/g) || [];
   const actionVerbsFound = Array.from(new Set(words.filter((w) => ACTION_VERBS.has(w))));
 
-  // 3. Metrics and Quantification
+  // 3. Metrics and Quantification (Numbers, %, $, scale)
   const metricRegex =
-    /(\b\d+([.,]\d+)?\s*(%|k|m|b|x|\+)?\b|\$\s*\d+([.,]\d+)?|\b\d+\s*(users|clients|engineers|team members|hours|days|weeks|percent|accuracy|samples|records|requests|stars)\b)/gi;
+    /(\b\d+([.,]\d+)?\s*(%|k|m|b|x|\+)?\b|\$\s*\d+([.,]\d+)?|\b\d+\s*(users|clients|engineers|team members|hours|days|weeks|percent|accuracy|samples|records|requests|stars|models|queries)\b)/gi;
   let quantifiedBulletsCount = 0;
   let totalMetricsCount = 0;
 
@@ -229,8 +344,10 @@ export function analyzeResume(
     }
   });
 
+  const matchedSecondarySkills: string[] = [];
   roleBenchmark.secondarySkills.forEach((skill) => {
     if (textContainsSkill(cleanResume, skill)) {
+      matchedSecondarySkills.push(skill);
       if (!matchedRoleSkills.includes(skill)) {
         matchedRoleSkills.push(skill);
       }
@@ -238,8 +355,8 @@ export function analyzeResume(
   });
 
   // 5. Job Description Keyword Matching
-  let matchedKeywords: string[] = [];
-  let missingKeywords: string[] = [];
+  const matchedKeywords: string[] = [];
+  const missingKeywords: string[] = [];
 
   const effectiveJd =
     checkMode === 'custom-jd' && jobDescriptionText && jobDescriptionText.trim().length > 20
@@ -257,270 +374,278 @@ export function analyzeResume(
     }
   });
 
-  // 6. Dynamic Calibration by Experience Level (Fresher vs Mid vs Senior)
+  // Structural checks
   const isFresher = experienceLevel === 'fresher';
   const isSenior = experienceLevel === 'senior';
-  const categoryScores: AtsCategoryScore[] = [];
 
-  // Core Role Match Percentage
-  const coreTotal = roleBenchmark.coreSkills.length;
-  const coreMatched = roleBenchmark.coreSkills.filter((s) => textContainsSkill(cleanResume, s)).length;
-  const coreSkillScore = Math.min(100, Math.round((coreMatched / Math.max(coreTotal * 0.7, 1)) * 100));
-
-  // Projects Detection
-  const hasProjects =
-    cleanResume.includes('project') ||
-    cleanResume.includes('capstone') ||
-    cleanResume.includes('github.com') ||
-    cleanResume.includes('kaggle') ||
-    cleanResume.includes('pipeline') ||
-    cleanResume.includes('built');
-
-  // Education Detection
   const hasEducation =
+    (resumeData?.education && resumeData.education.length > 0) ||
     cleanResume.includes('education') ||
     cleanResume.includes('degree') ||
     cleanResume.includes('university') ||
-    cleanResume.includes('college') ||
     cleanResume.includes('bachelor') ||
     cleanResume.includes('master');
 
-  // Work Experience Detection
   const hasWorkExperience =
+    (resumeData?.experience && resumeData.experience.length > 0) ||
     cleanResume.includes('experience') ||
     cleanResume.includes('employment') ||
     cleanResume.includes('worked at') ||
     cleanResume.includes('engineer at') ||
     cleanResume.includes('intern');
 
-  if (isFresher) {
-    // ---------------- FRESHER CALIBRATION ----------------
-    // Category 1: Projects & Practical Implementation (Weight: 35%)
-    let projectScore = 80;
-    if (hasProjects) projectScore += 10;
-    if (cleanResume.includes('github') || cleanResume.includes('kaggle')) projectScore += 10;
-    if (bullets.length >= 4) projectScore += 5;
-    if (quantifiedBulletsCount >= 2) projectScore += 5;
-    projectScore = Math.min(100, projectScore);
+  const hasProjects =
+    (resumeData?.projects && resumeData.projects.length > 0) ||
+    cleanResume.includes('project') ||
+    cleanResume.includes('capstone') ||
+    cleanResume.includes('github.com') ||
+    cleanResume.includes('pipeline');
 
-    categoryScores.push({
-      name: 'Projects & Practical Implementation',
-      score: projectScore,
-      weight: 35,
-      feedback:
-        projectScore >= 85
-          ? `Exceptional project showcase for a ${roleBenchmark.title} fresher! Capstone projects and technical implementations carry heavy ATS weight.`
-          : `Ensure you highlight end-to-end projects with public GitHub/Kaggle links and technologies used.`,
-      status: projectScore >= 80 ? 'excellent' : projectScore >= 65 ? 'good' : 'warning',
-    });
+  const hasEmail = resumeData?.personalInfo.email
+    ? Boolean(resumeData.personalInfo.email.includes('@'))
+    : Boolean(cleanResume.includes('@'));
 
-    // Category 2: Role Foundational Skills (Weight: 35%)
-    categoryScores.push({
-      name: `${roleBenchmark.title} Core Skills`,
-      score: coreSkillScore,
-      weight: 35,
-      feedback:
-        coreSkillScore >= 80
-          ? `Matched ${coreMatched}/${coreTotal} non-negotiable core skills for ${roleBenchmark.title} (e.g. ${matchedRoleSkills.slice(0, 4).join(', ')}).`
-          : `Missing key foundational skills: ${missingRoleSkills.slice(0, 4).join(', ')}. Include these in your Skills section or project descriptions.`,
-      status: coreSkillScore >= 80 ? 'excellent' : coreSkillScore >= 60 ? 'good' : 'critical',
-    });
+  const hasPhone = resumeData?.personalInfo.phone
+    ? resumeData.personalInfo.phone.trim().length >= 7
+    : Boolean(/\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b|\+\d{1,3}/.test(resumeText));
 
-    // Category 3: Action Verbs & Initiative (Weight: 15%)
-    const verbCount = actionVerbsFound.length;
-    const verbScore = Math.min(100, Math.round((verbCount / 6) * 100));
-    categoryScores.push({
-      name: 'Action Verbs & Proactivity',
-      score: verbScore,
-      weight: 15,
-      feedback:
-        verbCount >= 5
-          ? `Detected ${verbCount} strong action verbs (${actionVerbsFound.slice(0, 3).join(', ')}). Demonstrates high builder initiative!`
-          : `Only found ${verbCount} action verbs. Start project bullets with verbs like "Built", "Engineered", "Analyzed", or "Implemented".`,
-      status: verbScore >= 75 ? 'excellent' : 'warning',
-    });
+  const hasLocation = resumeData?.personalInfo.location
+    ? resumeData.personalInfo.location.trim().length > 2
+    : Boolean(cleanResume.includes('ca') || cleanResume.includes('ny') || cleanResume.includes('india') || cleanResume.includes('usa'));
 
-    // Category 4: ATS Structure & Education (Weight: 15%) - NO WORK EXPERIENCE PENALTY
-    let structScore = 100;
-    if (!cleanResume.includes('@')) structScore -= 30;
-    if (!hasEducation) structScore -= 30;
-    if (resumeText.length < 250) structScore -= 20;
+  const hasLinks = resumeData?.personalInfo
+    ? Boolean(resumeData.personalInfo.linkedin || resumeData.personalInfo.github || resumeData.personalInfo.website)
+    : Boolean(cleanResume.includes('linkedin') || cleanResume.includes('github') || cleanResume.includes('http'));
 
-    categoryScores.push({
-      name: 'Structure & Education (Fresher ATS)',
-      score: Math.max(30, structScore),
-      weight: 15,
-      feedback:
-        hasEducation
-          ? 'Contact information, education, and credentials are well-structured without corporate experience penalty.'
-          : 'Be sure your degree, university, graduation date, and email are clearly listed.',
-      status: structScore >= 85 ? 'excellent' : 'warning',
-    });
-  } else if (isSenior) {
-    // ---------------- SENIOR CALIBRATION ----------------
-    // Category 1: Impact & Measurable Metrics (Weight: 30%)
-    let metricScore = Math.min(100, Math.round(quantifiedRatio * 1.5));
-    if (quantifiedRatio >= 50) metricScore = 95;
-    else if (quantifiedRatio >= 35) metricScore = 80;
+  const summaryText = resumeData?.summary || '';
+  const summaryWords = summaryText.trim() ? summaryText.trim().split(/\s+/).length : 0;
+
+  // =========================================================================
+  // 6 HIGH-ACCURACY CALIBRATED CATEGORIES (TOTAL 100%)
+  // =========================================================================
+  const categoryScores: AtsCategoryScore[] = [];
+
+  // CATEGORY 1: Contact & Web Presence (Weight: 15%)
+  let contactScore = 0;
+  if (resumeData?.personalInfo.fullName || resumeText.split('\n')[0].length > 3) contactScore += 25;
+  if (hasEmail) contactScore += 25;
+  if (hasPhone) contactScore += 20;
+  if (hasLocation) contactScore += 15;
+  if (hasLinks) contactScore += 15;
+  contactScore = Math.min(100, Math.max(30, contactScore));
+
+  categoryScores.push({
+    name: 'Contact & Online Presence',
+    score: contactScore,
+    weight: 15,
+    feedback:
+      contactScore >= 85
+        ? 'Full contact details, email, location, and professional links (LinkedIn/GitHub) verified.'
+        : 'Ensure your email, phone, location, and LinkedIn/GitHub link are clearly accessible.',
+    status: contactScore >= 80 ? 'excellent' : contactScore >= 60 ? 'good' : 'warning',
+  });
+
+  // CATEGORY 2: Professional Summary & Pitch (Weight: 15%)
+  let summaryScore = 70;
+  if (summaryWords >= 30 && summaryWords <= 100) {
+    summaryScore = 95;
+  } else if (summaryWords > 100) {
+    summaryScore = 75; // slightly long for 1-page standard
+  } else if (summaryWords >= 15) {
+    summaryScore = 80;
+  } else if (summaryWords === 0) {
+    // If no dedicated summary, check if top of resume has intro
+    summaryScore = resumeText.length > 500 ? 60 : 40;
+  }
+
+  // Bonus if mentions role or key keywords
+  if (textContainsSkill(summaryText || cleanResume, roleBenchmark.title)) {
+    summaryScore = Math.min(100, summaryScore + 5);
+  }
+
+  categoryScores.push({
+    name: 'Professional Summary & Alignment',
+    score: summaryScore,
+    weight: 15,
+    feedback:
+      summaryScore >= 85
+        ? `Concise, role-targeted summary statement (${summaryWords} words) aligned with ${roleBenchmark.title}.`
+        : 'Aim for a 30–80 word summary highlighting your target role, top strengths, and concrete value.',
+    status: summaryScore >= 80 ? 'excellent' : summaryScore >= 60 ? 'good' : 'warning',
+  });
+
+  // CATEGORY 3: Measurable Metrics & Impact (Weight: 25%)
+  let metricScore = 50;
+  if (isSenior) {
+    if (quantifiedRatio >= 45) metricScore = 95;
+    else if (quantifiedRatio >= 30) metricScore = 80;
+    else if (quantifiedRatio >= 15) metricScore = 65;
+    else metricScore = 40;
+  } else if (isFresher) {
+    if (quantifiedRatio >= 25 || totalMetricsCount >= 3) metricScore = 95;
+    else if (quantifiedRatio >= 15 || totalMetricsCount >= 1) metricScore = 85;
+    else metricScore = 65; // No heavy corporate metric penalty for freshers
+  } else {
+    // Mid-level
+    if (quantifiedRatio >= 35) metricScore = 92;
+    else if (quantifiedRatio >= 20) metricScore = 78;
+    else if (quantifiedRatio >= 10) metricScore = 65;
     else metricScore = 50;
-
-    categoryScores.push({
-      name: 'Executive Impact & ROI Metrics',
-      score: metricScore,
-      weight: 30,
-      feedback:
-        quantifiedRatio >= 45
-          ? `${quantifiedRatio}% of bullets include quantified metrics (\$, %, scale). Senior roles require quantifiable business impact.`
-          : `Senior recruiters look for quantified results (e.g. latency cut by 40%, \$1.2M saved, 10M requests/day). Only ${quantifiedRatio}% of bullets have numbers.`,
-      status: metricScore >= 80 ? 'excellent' : 'warning',
-    });
-
-    // Category 2: Production Scale & Experience Depth (Weight: 25%)
-    let expScore = hasWorkExperience ? 90 : 40;
-    if (cleanResume.includes('architected') || cleanResume.includes('spearheaded') || cleanResume.includes('scaled')) {
-      expScore = Math.min(100, expScore + 10);
-    }
-    categoryScores.push({
-      name: 'Experience Depth & Architecture',
-      score: expScore,
-      weight: 25,
-      feedback:
-        expScore >= 85
-          ? 'Strong demonstration of senior ownership, systems architecture, and production delivery.'
-          : 'Highlight multi-year progression, architectural leadership, and cross-team execution.',
-      status: expScore >= 80 ? 'excellent' : 'warning',
-    });
-
-    // Category 3: Advanced Tech Stack & MLOps/Cloud (Weight: 25%)
-    categoryScores.push({
-      name: `${roleBenchmark.title} Advanced Alignment`,
-      score: coreSkillScore,
-      weight: 25,
-      feedback: `Matched ${matchedRoleSkills.length} key competencies for Senior ${roleBenchmark.title}.`,
-      status: coreSkillScore >= 80 ? 'excellent' : 'good',
-    });
-
-    // Category 4: Leadership Verbs & Structure (Weight: 20%)
-    const leadershipVerbs = actionVerbsFound.filter((v) =>
-      ['architected', 'spearheaded', 'led', 'mentored', 'orchestrated', 'scaled', 'governed', 'drove'].includes(v)
-    );
-    const leadScore = Math.min(100, leadershipVerbs.length >= 3 ? 95 : leadershipVerbs.length >= 1 ? 80 : 55);
-    categoryScores.push({
-      name: 'Leadership & Strategic Tone',
-      score: leadScore,
-      weight: 20,
-      feedback:
-        leadershipVerbs.length >= 2
-          ? `Detected senior leadership verbs (${leadershipVerbs.join(', ')}). Demonstrates high ownership.`
-          : 'Incorporate leadership verbs such as "Architected", "Spearheaded", "Mentored", or "Scaled".',
-      status: leadScore >= 80 ? 'excellent' : 'warning',
-    });
-  } else {
-    // ---------------- MID-LEVEL CALIBRATION (2-4 yrs) ----------------
-    let metricScore = Math.min(100, Math.round(quantifiedRatio * 1.3));
-    if (quantifiedRatio >= 40) metricScore = 90;
-    else if (quantifiedRatio >= 25) metricScore = 75;
-    else metricScore = 55;
-
-    categoryScores.push({
-      name: 'Measurable Achievements',
-      score: metricScore,
-      weight: 25,
-      feedback: `${quantifiedRatio}% of bullets include metrics or measurable outcomes.`,
-      status: metricScore >= 80 ? 'excellent' : 'good',
-    });
-
-    categoryScores.push({
-      name: `${roleBenchmark.title} Skills & Tools`,
-      score: coreSkillScore,
-      weight: 35,
-      feedback: `Covering ${matchedRoleSkills.length} core & secondary skills for ${roleBenchmark.title}.`,
-      status: coreSkillScore >= 80 ? 'excellent' : 'warning',
-    });
-
-    const verbScore = Math.min(100, Math.round((actionVerbsFound.length / 8) * 100));
-    categoryScores.push({
-      name: 'Action Verbs & Impact',
-      score: Math.max(50, verbScore),
-      weight: 20,
-      feedback: `Found ${actionVerbsFound.length} strong action verbs across your achievements.`,
-      status: verbScore >= 75 ? 'excellent' : 'good',
-    });
-
-    let structScore = 100;
-    if (!cleanResume.includes('@')) structScore -= 25;
-    if (!hasEducation) structScore -= 20;
-    if (!hasWorkExperience) structScore -= 20;
-    categoryScores.push({
-      name: 'Structure & ATS Parsability',
-      score: Math.max(40, structScore),
-      weight: 20,
-      feedback: 'Standard ATS-parseable sections and professional layout.',
-      status: structScore >= 85 ? 'excellent' : 'warning',
-    });
   }
 
-  // Calculate Overall Weighted Score
+  categoryScores.push({
+    name: 'Quantified Impact & XYZ Metrics',
+    score: metricScore,
+    weight: 25,
+    feedback:
+      metricScore >= 80
+        ? `${quantifiedRatio}% of bullet points include measurable outcomes (%, \$, scale, time saved).`
+        : `Quantify accomplishments with numbers (e.g. "improved latency by 35%", "handled 10k users"). Only ${quantifiedRatio}% of bullets currently have numbers.`,
+    status: metricScore >= 80 ? 'excellent' : metricScore >= 65 ? 'good' : 'warning',
+  });
+
+  // CATEGORY 4: Strong Action Verbs & Active Voice (Weight: 15%)
+  const verbCount = actionVerbsFound.length;
+  let verbScore = 50;
+  if (verbCount >= 8) verbScore = 96;
+  else if (verbCount >= 5) verbScore = 85;
+  else if (verbCount >= 3) verbScore = 70;
+  else verbScore = 50;
+
+  // Deduct for passive phrasing
+  verbScore = Math.max(25, verbScore - weakPhrases.length * 10);
+
+  categoryScores.push({
+    name: 'Action Verbs & Active Voice',
+    score: verbScore,
+    weight: 15,
+    feedback:
+      verbScore >= 80
+        ? `Found ${verbCount} strong action verbs (${actionVerbsFound.slice(0, 4).join(', ')}) with zero weak passive phrases.`
+        : weakPhrases.length > 0
+        ? `Found ${weakPhrases.length} passive clichés (e.g. "${weakPhrases[0].original}"). Replace with active verbs like "Spearheaded" or "Engineered".`
+        : `Include more action verbs (only found ${verbCount}). Start bullet points with verbs like "Built", "Optimized", or "Delivered".`,
+    status: verbScore >= 80 ? 'excellent' : verbScore >= 60 ? 'good' : 'warning',
+  });
+
+  // CATEGORY 5: Target Role Skills & Keywords (Weight: 20%)
+  const coreTotal = roleBenchmark.coreSkills.length;
+  const coreMatched = roleBenchmark.coreSkills.filter((s) => textContainsSkill(cleanResume, s)).length;
+  let skillScore = 0;
+
+  if (checkMode === 'custom-jd' && jdKeywords.length > 0) {
+    const jdMatchRatio = matchedKeywords.length / Math.max(jdKeywords.length * 0.5, 1);
+    skillScore = Math.min(100, Math.max(30, Math.round(jdMatchRatio * 90)));
+  } else {
+    // Role benchmark matching
+    const ratio = coreMatched / Math.max(coreTotal * 0.6, 1);
+    skillScore = Math.min(100, Math.max(30, Math.round(ratio * 85 + (matchedSecondarySkills.length > 0 ? 15 : 0))));
+  }
+
+  categoryScores.push({
+    name: `${roleBenchmark.title} Core Stack Match`,
+    score: skillScore,
+    weight: 20,
+    feedback:
+      skillScore >= 80
+        ? `Matched ${coreMatched}/${coreTotal} non-negotiable core skills for ${roleBenchmark.title}.`
+        : `Missing key skills: ${missingRoleSkills.slice(0, 4).join(', ')}. Include these in your Skills section or project descriptions.`,
+    status: skillScore >= 80 ? 'excellent' : skillScore >= 60 ? 'good' : 'critical',
+  });
+
+  // CATEGORY 6: ATS Structure & Parsability (Weight: 10%)
+  let structScore = 80;
+  if (hasEducation) structScore += 10;
+  if (hasWorkExperience || hasProjects) structScore += 10;
+  if (bullets.length >= 4) structScore += 5;
+  if (resumeText.length < 250) structScore -= 30; // too short
+  structScore = Math.min(100, Math.max(35, structScore));
+
+  categoryScores.push({
+    name: 'ATS Structure & Parsability',
+    score: structScore,
+    weight: 10,
+    feedback:
+      structScore >= 85
+        ? 'Standard ATS-parseable section hierarchy, clear headings, and clean bulleted formatting.'
+        : 'Ensure standard headings (Experience, Education, Skills) are present and easy for ATS bots to segment.',
+    status: structScore >= 85 ? 'excellent' : 'warning',
+  });
+
+  // Calculate Overall Weighted Score (sum of all 6 weighted categories)
   const weightedSum = categoryScores.reduce((acc, cat) => acc + cat.score * (cat.weight / 100), 0);
-  const overallScore = Math.min(100, Math.max(20, Math.round(weightedSum)));
+  const overallScore = Math.min(100, Math.max(25, Math.round(weightedSum)));
 
-  // Generate Tailored Checklist
-  const checklist: AtsChecklistCheck[] = [];
-  if (isFresher) {
-    checklist.push({
-      label: 'End-to-End Technical Projects',
-      passed: hasProjects,
-      tip: hasProjects
-        ? 'Projects section detected with concrete technical work.'
-        : 'Add 2–3 capstone or academic projects with problem description and tech stack.',
-    });
-    checklist.push({
-      label: 'GitHub / Kaggle / Portfolio Links',
-      passed: cleanResume.includes('github') || cleanResume.includes('kaggle') || cleanResume.includes('http'),
-      tip: 'Recruiters inspect code repositories to verify hands-on coding skills for freshers.',
-    });
-    checklist.push({
-      label: `${roleBenchmark.title} Core Foundation`,
-      passed: coreMatched >= Math.floor(coreTotal * 0.5),
-      tip: `Include target role foundations: ${roleBenchmark.coreSkills.slice(0, 4).join(', ')}.`,
-    });
-    checklist.push({
-      label: 'Education & Degree Verification',
+  // =========================================================================
+  // ITEMIZE 10-POINT COMPREHENSIVE ATS AUDIT CHECKLIST
+  // =========================================================================
+  const checklist: AtsChecklistCheck[] = [
+    {
+      label: '1. Contact Details (Email, Phone, City)',
+      passed: Boolean(hasEmail && hasPhone),
+      tip: 'Recruiters and automated systems require direct phone and verified email for interview routing.',
+      category: 'Contact',
+    },
+    {
+      label: '2. Online Profiles (LinkedIn / GitHub)',
+      passed: hasLinks,
+      tip: isFresher
+        ? 'GitHub/Kaggle profiles are essential to verify code samples and project repositories.'
+        : 'LinkedIn profile link allows recruiters to verify tenure and recommendations.',
+      category: 'Contact',
+    },
+    {
+      label: '3. Target Role Title Alignment',
+      passed: Boolean(
+        textContainsSkill(cleanResume, roleBenchmark.title) ||
+        (resumeData?.personalInfo.jobTitle && resumeData.personalInfo.jobTitle.length > 3)
+      ),
+      tip: `Ensure your target title (e.g. "${roleBenchmark.title}") is explicitly stated under your name.`,
+      category: 'Summary',
+    },
+    {
+      label: '4. Concise Professional Summary',
+      passed: summaryWords >= 25,
+      tip: 'Include a 30–80 word summary positioning your key achievements and core technology stack.',
+      category: 'Summary',
+    },
+    {
+      label: '5. Core Role Competencies (>= 50% match)',
+      passed: coreMatched >= Math.ceil(coreTotal * 0.5),
+      tip: `Must include role essentials: ${roleBenchmark.coreSkills.slice(0, 3).join(', ')}.`,
+      category: 'Skills',
+    },
+    {
+      label: '6. Quantified Achievements (XYZ Formula)',
+      passed: isFresher ? totalMetricsCount >= 1 || quantifiedRatio >= 15 : quantifiedRatio >= 30,
+      tip: 'Back up claims with metrics: % improvements, user counts, latency reductions, or dataset sizes.',
+      category: 'Metrics',
+    },
+    {
+      label: '7. Strong Action Verbs (Front-Loaded)',
+      passed: actionVerbsFound.length >= 5,
+      tip: 'Start bullet points with decisive action verbs like "Architected", "Spearheaded", or "Delivered".',
+      category: 'Action Verbs',
+    },
+    {
+      label: '8. Zero Passive Phrasing & Clichés',
+      passed: weakPhrases.length === 0,
+      tip: 'Eliminate vague phrasing like "responsible for", "duties included", or "helped with".',
+      category: 'Action Verbs',
+    },
+    {
+      label: '9. Education & Formal Credentials',
       passed: hasEducation,
-      tip: 'Ensure your degree, university, graduation year, and relevant coursework are listed.',
-    });
-    checklist.push({
-      label: 'Quantified Model / Project Results',
-      passed: quantifiedBulletsCount >= 1,
-      tip: 'Even in projects, quantify metrics (e.g. 91% accuracy, 12,000 samples, 45ms inference).',
-    });
-  } else {
-    checklist.push({
-      label: 'Measurable Outcomes (XYZ Formula)',
-      passed: quantifiedRatio >= 35,
-      tip: 'Use: Accomplished [X], measured by [Y], by doing [Z].',
-    });
-    checklist.push({
-      label: `${roleBenchmark.title} Keywords Coverage`,
-      passed: coreMatched >= Math.floor(coreTotal * 0.6),
-      tip: `Incorporate high-priority keywords: ${roleBenchmark.coreSkills.slice(0, 4).join(', ')}.`,
-    });
-    checklist.push({
-      label: 'Work Experience Progression',
-      passed: hasWorkExperience,
-      tip: 'List chronological roles with company name, title, dates, and accomplishments.',
-    });
-    checklist.push({
-      label: 'Strong Action Verbs (Zero Passive Voice)',
-      passed: actionVerbsFound.length >= 6 && weakPhrases.length === 0,
-      tip: 'Start every bullet with high-power action verbs.',
-    });
-    checklist.push({
-      label: 'Clean ATS Contact & Formatting',
-      passed: cleanResume.includes('@'),
-      tip: 'Ensure standard fonts, clear headings, email, phone, and location.',
-    });
-  }
+      tip: 'Include your degree, institution, and graduation year in standard ATS-parseable format.',
+      category: 'Structure',
+    },
+    {
+      label: '10. ATS Section Hierarchy & Parsability',
+      passed: structScore >= 80,
+      tip: 'Standard linear layout with headings (Experience, Projects, Skills, Education) that robots can parse.',
+      category: 'Structure',
+    },
+  ];
 
   // Recommendations Roadmap
   const recommendations: string[] = [];
@@ -529,29 +654,41 @@ export function analyzeResume(
       `Incorporate top missing skills for ${roleBenchmark.title}: ${missingRoleSkills.slice(0, 4).join(', ')}.`
     );
   }
-  if (isFresher && !cleanResume.includes('github')) {
+  if (!hasLinks) {
     recommendations.push(
-      'Add your GitHub or Kaggle profile link near your contact info so recruiters can review your code.'
+      isFresher
+        ? 'Add your GitHub or Kaggle profile link near your contact info so recruiters can inspect your code.'
+        : 'Add your LinkedIn profile URL in your contact header for fast recruiter outreach.'
     );
   }
-  if (quantifiedRatio < 40) {
+  if (quantifiedRatio < 35) {
     recommendations.push(
-      'Boost quantification: add numbers (%, datasets size, speed, user count) to at least 40% of your bullets.'
+      'Boost metric density: incorporate numbers (%, latency, revenue, user count) to at least 35% of your bullet points.'
     );
   }
   if (weakPhrases.length > 0) {
-    recommendations.push(`Eliminate passive phrasing like "${weakPhrases[0].original}" to project confidence.`);
+    recommendations.push(
+      `Replace passive phrases like "${weakPhrases[0].original}" with active impact verbs to project ownership.`
+    );
   }
   if (actionVerbsFound.length < 5) {
     recommendations.push(
       'Begin bullet points with decisive verbs like "Engineered", "Orchestrated", "Implemented", or "Optimized".'
     );
   }
-  if (recommendations.length === 0) {
+  if (summaryWords < 25) {
     recommendations.push(
-      `Outstanding resume! Perfectly tailored for a ${experienceLevel} ${roleBenchmark.title} role with optimal ATS compliance.`
+      'Craft a compelling 2–3 sentence professional summary at the top of your resume highlighting your core niche.'
     );
   }
+  if (recommendations.length === 0) {
+    recommendations.push(
+      `Outstanding resume! Perfectly calibrated for a ${experienceLevel} ${roleBenchmark.title} position with top-tier ATS compliance.`
+    );
+  }
+
+  // Simulated Raw ATS plain text parser
+  const rawAtsText = generateRawAtsText(resumeText, resumeData);
 
   return {
     overallScore,
@@ -571,5 +708,6 @@ export function analyzeResume(
     matchedRoleSkills,
     missingRoleSkills,
     checklist,
+    rawAtsText,
   };
 }

@@ -168,6 +168,12 @@ export interface ResumeTheme {
   spacing: 'compact' | 'normal' | 'spacious';
   showHeatmap?: boolean;
   showPhoto?: boolean;
+  fitToOnePage?: boolean;
+  dividerStyle?: 'none' | 'solid' | 'dashed' | 'dotted' | 'double' | 'gradient';
+  showVerticalDividers?: boolean;
+  textAlign?: 'left' | 'center' | 'right' | 'justify';
+  boldHeadings?: boolean;
+  directEditMode?: boolean;
 }
 
 export interface AtsCategoryScore {
@@ -207,6 +213,7 @@ export interface AtsChecklistCheck {
   label: string;
   passed: boolean;
   tip: string;
+  category?: string;
 }
 
 export interface AtsAnalysisResult {
@@ -227,6 +234,7 @@ export interface AtsAnalysisResult {
   matchedRoleSkills: string[];
   missingRoleSkills: string[];
   checklist: AtsChecklistCheck[];
+  rawAtsText?: string;
 }
 
 export interface JobApplication {

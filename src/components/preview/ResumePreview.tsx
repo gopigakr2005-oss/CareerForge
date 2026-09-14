@@ -12,23 +12,41 @@ import {
   X,
   Smartphone,
   Monitor,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  AlignJustify,
+  Edit3,
+  Minimize2,
+  Split,
+  Minus,
+  Download,
+  Loader2,
+  Save,
 } from 'lucide-react';
 import { resumeDataToText } from '../../services/atsAnalyzer';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 
 interface Props {
   data: ResumeData;
   theme: ResumeTheme;
   onThemeChange?: (theme: ResumeTheme) => void;
+  onUpdateData?: (data: ResumeData) => void;
+  onSave?: () => void;
 }
 
-export const ResumePreview: React.FC<Props> = ({ data, theme }) => {
+export const ResumePreview: React.FC<Props> = ({ data, theme, onThemeChange, onUpdateData, onSave }) => {
   const [zoom, setZoom] = useState<number>(100);
   const [copied, setCopied] = useState<boolean>(false);
   const [isExporting, setIsExporting] = useState<boolean>(false);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState<boolean>(false);
   const [previewMode, setPreviewMode] = useState<'desktop' | 'mobile'>('desktop');
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const [showToolsBar, setShowToolsBar] = useState<boolean>(true);
   const resumeRef = useRef<HTMLDivElement>(null);
 
+  // System Print Export
   const handleExportPdf = () => {
     setIsExporting(true);
     try {
@@ -37,6 +55,63 @@ export const ResumePreview: React.FC<Props> = ({ data, theme }) => {
       console.error('PDF export error:', err);
     } finally {
       setIsExporting(false);
+    }
+  };
+
+  // High-Resolution Direct PDF Download (Ensures No Cutoffs)
+  const handleDownloadDirectPdf = async () => {
+    if (!resumeRef.current) return;
+    setIsDownloadingPdf(true);
+    try {
+      const element = resumeRef.current;
+      const canvas = await html2canvas(element, {
+        scale: 2, // High resolution (crisp 300 DPI)
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff',
+        windowWidth: 1024,
+      });
+
+      const imgData = canvas.toDataURL('image/jpeg', 0.98);
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4',
+      });
+
+      const pdfWidth = 210;
+      const pdfHeight = 297;
+      const canvasWidth = canvas.width;
+      const canvasHeight = canvas.height;
+      const totalPdfHeight = (canvasHeight * pdfWidth) / canvasWidth;
+
+      if (theme.fitToOnePage || totalPdfHeight <= pdfHeight + 5) {
+        // Single Page exact fit
+        const renderHeight = theme.fitToOnePage && totalPdfHeight > pdfHeight ? pdfHeight : totalPdfHeight;
+        pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, renderHeight);
+      } else {
+        // Multi-page clean slicing
+        let heightLeft = totalPdfHeight;
+        let position = 0;
+
+        pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, totalPdfHeight);
+        heightLeft -= pdfHeight;
+
+        while (heightLeft > 0) {
+          position = heightLeft - totalPdfHeight;
+          pdf.addPage();
+          pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, totalPdfHeight);
+          heightLeft -= pdfHeight;
+        }
+      }
+
+      const fileName = `${(data.personalInfo.fullName || 'Resume').replace(/\s+/g, '_')}_CareerForge.pdf`;
+      pdf.save(fileName);
+    } catch (err) {
+      console.error('Direct PDF export error, falling back to window.print', err);
+      window.print();
+    } finally {
+      setIsDownloadingPdf(false);
     }
   };
 
@@ -73,19 +148,39 @@ export const ResumePreview: React.FC<Props> = ({ data, theme }) => {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const dividerStyles: ('solid' | 'dashed' | 'dotted' | 'double' | 'gradient' | 'none')[] = [
+    'solid',
+    'dashed',
+    'dotted',
+    'double',
+    'gradient',
+    'none',
+  ];
+
+  const cycleDividerStyle = () => {
+    const current = theme.dividerStyle || 'solid';
+    const nextIdx = (dividerStyles.indexOf(current) + 1) % dividerStyles.length;
+    onThemeChange?.({ ...theme, dividerStyle: dividerStyles[nextIdx] });
+  };
+
   return (
     <>
       <div className="flex flex-col h-full bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-2xl">
         {/* Top Preview Toolbar */}
-        <div className="no-print flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 bg-slate-950/80 border-b border-slate-800 text-slate-300">
+        <div className="no-print flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 bg-slate-950/90 border-b border-slate-800 text-slate-300">
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Live Preview</span>
             <span className="text-[11px] px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 font-medium">
               {theme.template.replace('-', ' ').toUpperCase()}
             </span>
+            {theme.fitToOnePage && (
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-semibold animate-pulse">
+                1-PAGE FIT
+              </span>
+            )}
           </div>
 
-          {/* Controls & Action Buttons */}
+          {/* Primary Action Buttons */}
           <div className="flex items-center gap-1.5 flex-wrap">
             {/* Device Mode Toggle */}
             <div className="flex items-center bg-slate-800/80 rounded-lg p-0.5 text-xs text-slate-400">
@@ -135,6 +230,19 @@ export const ResumePreview: React.FC<Props> = ({ data, theme }) => {
               <Maximize2 className="w-3.5 h-3.5" />
             </button>
 
+            {/* Toggle Visual Toolbar */}
+            <button
+              onClick={() => setShowToolsBar(!showToolsBar)}
+              className={`p-1.5 rounded-lg border transition ${
+                showToolsBar
+                  ? 'bg-blue-600/20 border-blue-500/40 text-blue-300'
+                  : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'
+              }`}
+              title="Toggle visual customization toolbar"
+            >
+              <Edit3 className="w-3.5 h-3.5" />
+            </button>
+
             {/* Copy Plain Text */}
             <button
               onClick={handleCopyText}
@@ -155,21 +263,147 @@ export const ResumePreview: React.FC<Props> = ({ data, theme }) => {
               <span className="hidden lg:inline">DOCX</span>
             </button>
 
-            {/* PDF Export */}
+            {/* System Print PDF */}
             <button
               onClick={handleExportPdf}
               disabled={isExporting}
-              className="flex items-center gap-1.5 text-xs font-semibold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-3 py-1.5 rounded-lg shadow-md transition"
+              className="flex items-center gap-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 px-2.5 py-1.5 rounded-lg border border-slate-700 shadow-sm transition"
+              title="Print via browser dialog"
             >
               <Printer className="w-3.5 h-3.5" />
-              <span>PDF</span>
+              <span className="hidden sm:inline">Print</span>
+            </button>
+
+            {/* Save Resume Button */}
+            {onSave && (
+              <button
+                onClick={onSave}
+                className="flex items-center gap-1.5 text-xs font-semibold bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 px-2.5 py-1.5 rounded-lg border border-emerald-500/40 shadow-xs transition cursor-pointer"
+                title="Save changes to browser storage"
+              >
+                <Save className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="hidden sm:inline">Save</span>
+              </button>
+            )}
+
+            {/* Direct High-DPI Download PDF (Guarantees no paragraph elimination) */}
+            <button
+              onClick={handleDownloadDirectPdf}
+              disabled={isDownloadingPdf}
+              className="flex items-center gap-1.5 text-xs font-semibold bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white px-3.5 py-1.5 rounded-lg shadow-md transition cursor-pointer"
+              title="Direct high-res PDF download (Guarantees complete content and 1-page fit)"
+            >
+              {isDownloadingPdf ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Download className="w-3.5 h-3.5" />
+              )}
+              <span>Download PDF</span>
             </button>
           </div>
         </div>
 
+        {/* Secondary Interactive Formatting & Visual Tools Toolbar */}
+        {showToolsBar && (
+          <div className="no-print flex flex-wrap items-center justify-between gap-2 px-4 py-2 bg-slate-950/60 border-b border-slate-800 text-xs text-slate-300">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider">Visual Tools:</span>
+
+              {/* 1-Page Auto-Fit Toggle */}
+              <button
+                onClick={() => onThemeChange?.({ ...theme, fitToOnePage: !theme.fitToOnePage })}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs transition cursor-pointer ${
+                  theme.fitToOnePage
+                    ? 'bg-emerald-600 text-white border-emerald-500 shadow-xs'
+                    : 'bg-slate-800 hover:bg-slate-750 text-slate-300 border-slate-700'
+                }`}
+                title="Automatically adjust fonts and spacing so your entire resume fits neatly onto 1 page"
+              >
+                <Minimize2 className="w-3 h-3" />
+                <span>Fit to 1 Page</span>
+              </button>
+
+              {/* Text Alignment */}
+              <div className="flex items-center bg-slate-800/90 rounded-md p-0.5 border border-slate-700">
+                <button
+                  onClick={() => onThemeChange?.({ ...theme, textAlign: 'left' })}
+                  className={`p-1 rounded ${(!theme.textAlign || theme.textAlign === 'left') ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+                  title="Align text left"
+                >
+                  <AlignLeft className="w-3 h-3" />
+                </button>
+                <button
+                  onClick={() => onThemeChange?.({ ...theme, textAlign: 'center' })}
+                  className={`p-1 rounded ${theme.textAlign === 'center' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+                  title="Align text center"
+                >
+                  <AlignCenter className="w-3 h-3" />
+                </button>
+                <button
+                  onClick={() => onThemeChange?.({ ...theme, textAlign: 'right' })}
+                  className={`p-1 rounded ${theme.textAlign === 'right' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+                  title="Align text right"
+                >
+                  <AlignRight className="w-3 h-3" />
+                </button>
+                <button
+                  onClick={() => onThemeChange?.({ ...theme, textAlign: 'justify' })}
+                  className={`p-1 rounded ${theme.textAlign === 'justify' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+                  title="Justify text"
+                >
+                  <AlignJustify className="w-3 h-3" />
+                </button>
+              </div>
+
+              {/* Horizontal Divider Line Style */}
+              <button
+                onClick={cycleDividerStyle}
+                className="flex items-center gap-1.5 px-2 py-1 bg-slate-800 hover:bg-slate-750 text-slate-200 rounded-md border border-slate-700 transition cursor-pointer"
+                title="Cycle section divider line styles: Solid, Dashed, Dotted, Double, Gradient, None"
+              >
+                <Minus className="w-3 h-3 text-blue-400" />
+                <span>Divider: <strong className="text-white capitalize">{theme.dividerStyle || 'solid'}</strong></span>
+              </button>
+
+              {/* Vertical Dividers Toggle */}
+              <button
+                onClick={() => onThemeChange?.({ ...theme, showVerticalDividers: theme.showVerticalDividers === false })}
+                className={`flex items-center gap-1 px-2 py-1 rounded-md border text-xs transition cursor-pointer ${
+                  theme.showVerticalDividers !== false
+                    ? 'bg-blue-600/30 text-blue-300 border-blue-500/50'
+                    : 'bg-slate-800 text-slate-400 border-slate-700'
+                }`}
+                title="Toggle vertical dividers in contact info and headers"
+              >
+                <Split className="w-3 h-3" />
+                <span>Vertical Lines: {theme.showVerticalDividers !== false ? 'ON' : 'OFF'}</span>
+              </button>
+
+              {/* Direct In-Place Edit Mode */}
+              <button
+                onClick={() => onThemeChange?.({ ...theme, directEditMode: !theme.directEditMode })}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-md border text-xs transition cursor-pointer ${
+                  theme.directEditMode
+                    ? 'bg-amber-600 text-white border-amber-500 shadow-xs'
+                    : 'bg-slate-800 hover:bg-slate-750 text-slate-300 border-slate-700'
+                }`}
+                title="Click and type directly on any text inside the preview"
+              >
+                <Edit3 className="w-3 h-3" />
+                <span>Direct Edit: {theme.directEditMode ? 'ACTIVE' : 'OFF'}</span>
+              </button>
+            </div>
+
+            <div className="hidden xl:flex items-center gap-2 text-[11px] text-slate-500">
+              <span>A4 Dimensions: 210 × 297 mm</span>
+            </div>
+          </div>
+        )}
+
         {/* Document Canvas Container */}
-        <div className="flex-1 overflow-auto p-4 sm:p-6 flex justify-center items-start bg-slate-950/40">
+        <div className="preview-canvas-wrapper flex-1 overflow-auto p-4 sm:p-6 flex justify-center items-start bg-slate-950/40 relative">
           <div
+            className="preview-transform-container"
             style={{
               transform: previewMode === 'desktop' ? `scale(${zoom / 100})` : 'scale(0.85)',
               transformOrigin: 'top center',
@@ -181,9 +415,13 @@ export const ResumePreview: React.FC<Props> = ({ data, theme }) => {
             <div
               ref={resumeRef}
               id="resume-document"
-              className="resume-paper resume-page bg-white shadow-2xl rounded-sm overflow-hidden text-slate-900 border border-slate-200"
+              className="resume-paper resume-page bg-white shadow-2xl rounded-sm text-slate-900 border border-slate-200 relative"
             >
-              <UniversalResumeRenderer data={data} theme={theme} />
+              <UniversalResumeRenderer
+                data={data}
+                theme={theme}
+                onUpdateData={onUpdateData}
+              />
             </div>
           </div>
         </div>
@@ -199,10 +437,18 @@ export const ResumePreview: React.FC<Props> = ({ data, theme }) => {
             </div>
             <div className="flex items-center gap-2">
               <button
-                onClick={handleExportPdf}
-                className="flex items-center gap-1.5 text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg font-medium"
+                onClick={handleDownloadDirectPdf}
+                disabled={isDownloadingPdf}
+                className="flex items-center gap-1.5 text-xs bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-3.5 py-1.5 rounded-lg font-medium shadow"
               >
-                <Printer className="w-3.5 h-3.5" /> Print / PDF
+                {isDownloadingPdf ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                Download PDF
+              </button>
+              <button
+                onClick={handleExportPdf}
+                className="flex items-center gap-1.5 text-xs bg-slate-800 hover:bg-slate-750 text-slate-200 px-3 py-1.5 rounded-lg font-medium border border-slate-700"
+              >
+                <Printer className="w-3.5 h-3.5" /> Print
               </button>
               <button
                 onClick={() => setIsFullscreen(false)}
@@ -213,8 +459,8 @@ export const ResumePreview: React.FC<Props> = ({ data, theme }) => {
             </div>
           </div>
           <div className="flex-1 overflow-auto p-6 flex justify-center items-start">
-            <div className="max-w-3xl w-full bg-white rounded shadow-2xl overflow-hidden">
-              <UniversalResumeRenderer data={data} theme={theme} />
+            <div className="max-w-3xl w-full bg-white rounded shadow-2xl">
+              <UniversalResumeRenderer data={data} theme={theme} onUpdateData={onUpdateData} />
             </div>
           </div>
         </div>

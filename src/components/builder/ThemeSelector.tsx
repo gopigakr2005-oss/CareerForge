@@ -193,6 +193,62 @@ export const ThemeSelector: React.FC<Props> = ({ theme, onChange }) => {
           </button>
         </div>
       </div>
+
+      {/* Advanced Layout & Formatting Row: 1-Page Fit, Dividers */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 border-t border-slate-800/80 text-xs items-center">
+        {/* 1-Page Auto-Fit Mode */}
+        <div className="flex items-center justify-between p-2 rounded-lg bg-slate-950/60 border border-slate-800">
+          <div>
+            <span className="font-semibold text-slate-200 block text-xs">Fit to 1 Page</span>
+            <span className="text-[10px] text-slate-400">Auto-compacts fonts and margins</span>
+          </div>
+          <button
+            onClick={() => onChange({ ...theme, fitToOnePage: !theme.fitToOnePage })}
+            className={`px-3 py-1 rounded-md text-xs font-bold transition cursor-pointer ${
+              theme.fitToOnePage
+                ? 'bg-emerald-600 text-white shadow-sm'
+                : 'bg-slate-800 text-slate-400 hover:text-white'
+            }`}
+          >
+            {theme.fitToOnePage ? 'ACTIVE' : 'OFF'}
+          </button>
+        </div>
+
+        {/* Section Divider Style */}
+        <div className="flex items-center justify-between p-2 rounded-lg bg-slate-950/60 border border-slate-800">
+          <span className="font-semibold text-slate-200 text-xs">Section Lines:</span>
+          <select
+            value={theme.dividerStyle || 'solid'}
+            onChange={(e) => onChange({ ...theme, dividerStyle: e.target.value as any })}
+            className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200 text-xs capitalize focus:outline-none"
+          >
+            <option value="solid">Solid Line</option>
+            <option value="dashed">Dashed Line</option>
+            <option value="dotted">Dotted Line</option>
+            <option value="double">Double Line</option>
+            <option value="gradient">Gradient Line</option>
+            <option value="none">No Divider</option>
+          </select>
+        </div>
+
+        {/* Vertical Separators Toggle */}
+        <div className="flex items-center justify-between p-2 rounded-lg bg-slate-950/60 border border-slate-800">
+          <div>
+            <span className="font-semibold text-slate-200 block text-xs">Vertical Dividers</span>
+            <span className="text-[10px] text-slate-400">Separators in contact bars</span>
+          </div>
+          <button
+            onClick={() => onChange({ ...theme, showVerticalDividers: theme.showVerticalDividers === false })}
+            className={`px-3 py-1 rounded-md text-xs font-bold transition cursor-pointer ${
+              theme.showVerticalDividers !== false
+                ? 'bg-blue-600 text-white shadow-sm'
+                : 'bg-slate-800 text-slate-400 hover:text-white'
+            }`}
+          >
+            {theme.showVerticalDividers !== false ? 'ON' : 'OFF'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 };

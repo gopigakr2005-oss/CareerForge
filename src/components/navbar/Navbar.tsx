@@ -13,6 +13,7 @@ import {
   Key,
   ChevronDown,
   Globe,
+  Save,
 } from 'lucide-react';
 import type { ResumeData } from '../../types/resume';
 import { SAMPLE_SOFTWARE_ENGINEER, SAMPLE_PRODUCT_MANAGER, SAMPLE_DATA_SCIENTIST_FRESHER as SAMPLE_DATA_SCIENTIST } from '../../data/sampleResumes';
@@ -35,6 +36,8 @@ interface Props {
   onLoadResume: (data: ResumeData) => void;
   onOpenApiKeyModal: () => void;
   onOpenImportModal: () => void;
+  onSave?: () => void;
+  lastSavedTime?: string | null;
 }
 
 export const Navbar: React.FC<Props> = ({
@@ -44,6 +47,8 @@ export const Navbar: React.FC<Props> = ({
   onLoadResume,
   onOpenApiKeyModal,
   onOpenImportModal,
+  onSave,
+  lastSavedTime,
 }) => {
   const hasApiKey = Boolean(getStoredApiKey());
 
@@ -172,6 +177,23 @@ export const Navbar: React.FC<Props> = ({
               </button>
             </div>
           </div>
+
+          {/* Explicit Save Resume Button */}
+          {onSave && (
+            <button
+              onClick={onSave}
+              className="flex items-center gap-1.5 text-xs bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 px-3 py-1.5 rounded-lg transition font-semibold shadow-sm cursor-pointer"
+              title={lastSavedTime ? `Saved locally at ${lastSavedTime}. Click to save now.` : 'Save resume progress to browser storage'}
+            >
+              <Save className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Save</span>
+              {lastSavedTime && (
+                <span className="hidden lg:inline text-[10px] text-emerald-400/80 font-normal">
+                  ({lastSavedTime})
+                </span>
+              )}
+            </button>
+          )}
 
           {/* Import Resume (PDF / JSON / TXT) */}
           <button

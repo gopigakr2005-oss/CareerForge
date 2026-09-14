@@ -19,6 +19,7 @@ interface UniversalResumeRendererProps {
   theme: ResumeTheme;
   id?: string;
   className?: string;
+  onUpdateData?: (newData: ResumeData) => void;
 }
 
 // Action verbs and weak phrases for heatmap scoring
@@ -48,16 +49,77 @@ function getBulletHeatmapStatus(bullet: string): 'strong' | 'weak' | 'moderate' 
   return 'moderate';
 }
 
+// Standalone Section Header to avoid re-creation during render
+interface SectionHeaderProps {
+  title: string;
+  icon?: React.ElementType;
+  primaryColor: string;
+  isMinimal: boolean;
+  dividerStyle?: 'none' | 'solid' | 'dashed' | 'dotted' | 'double' | 'gradient';
+  boldHeadings?: boolean;
+}
+
+const SectionHeader: React.FC<SectionHeaderProps> = ({
+  title,
+  icon: Icon,
+  primaryColor,
+  isMinimal,
+  dividerStyle = 'solid',
+  boldHeadings = true,
+}) => {
+  const borderStyleClass =
+    dividerStyle === 'dashed' ? 'border-dashed' :
+    dividerStyle === 'dotted' ? 'border-dotted' :
+    dividerStyle === 'double' ? 'border-b-2 border-double' :
+    'border-solid';
+
+  return (
+    <div
+      className={`pb-1 mb-2.5 mt-3.5 resume-section-header ${
+        dividerStyle !== 'none' && dividerStyle !== 'gradient' ? `border-b ${borderStyleClass}` : ''
+      }`}
+      style={{ borderColor: isMinimal ? '#94a3b8' : `${primaryColor}55` }}
+    >
+      <h2
+        className="text-xs tracking-wider uppercase flex items-center gap-1.5"
+        style={{
+          color: isMinimal ? '#0f172a' : primaryColor,
+          fontWeight: boldHeadings ? 700 : 600,
+        }}
+      >
+        {Icon && <Icon className="w-3.5 h-3.5 shrink-0" />}
+        <span>{title}</span>
+      </h2>
+      {dividerStyle === 'gradient' && (
+        <div
+          className="h-0.5 w-full mt-1 rounded"
+          style={{ background: `linear-gradient(to right, ${primaryColor}, transparent)` }}
+        />
+      )}
+    </div>
+  );
+};
+
 export const UniversalResumeRenderer: React.FC<UniversalResumeRendererProps> = ({
   data,
   theme,
   id = 'resume-universal-document',
   className = '',
+  onUpdateData,
 }) => {
   const { personalInfo } = data;
   const primaryColor = theme.primaryColor || '#2563eb';
   const isHeatmap = !!theme.showHeatmap;
   const template = theme.template;
+  const dividerStyle = theme.dividerStyle || 'solid';
+  const boldHeadings = theme.boldHeadings !== false;
+  const isFitToOnePage = !!theme.fitToOnePage;
+  const isDirectEdit = !!theme.directEditMode;
+
+  const textAlignClass =
+    theme.textAlign === 'center' ? 'text-center' :
+    theme.textAlign === 'right' ? 'text-right' :
+    theme.textAlign === 'justify' ? 'text-justify' : 'text-left';
 
   // Font family mapping
   const fontClass =
@@ -67,30 +129,38 @@ export const UniversalResumeRenderer: React.FC<UniversalResumeRendererProps> = (
       ? 'font-mono'
       : 'font-sans';
 
-  // Spacing presets
-  const spacingClasses = {
-    compact: {
-      root: 'p-6 text-[12px] leading-relaxed',
-      section: 'mb-3',
-      header: 'mb-3 pb-2',
-      item: 'mb-2',
-      list: 'space-y-0.5',
-    },
-    normal: {
-      root: 'p-8 text-[13.5px] leading-relaxed',
-      section: 'mb-5',
-      header: 'mb-5 pb-3',
-      item: 'mb-3',
-      list: 'space-y-1',
-    },
-    spacious: {
-      root: 'p-10 text-[14px] leading-loose',
-      section: 'mb-6',
-      header: 'mb-6 pb-4',
-      item: 'mb-4',
-      list: 'space-y-1.5',
-    },
-  }[theme.spacing || 'normal'];
+  // Spacing presets (compacted if fitToOnePage is active)
+  const spacingClasses = isFitToOnePage
+    ? {
+        root: 'p-5 text-[11.5px] leading-snug',
+        section: 'mb-2.5',
+        header: 'mb-2.5 pb-1.5',
+        item: 'mb-1.5',
+        list: 'space-y-0.5',
+      }
+    : {
+        compact: {
+          root: 'p-6 text-[12px] leading-relaxed',
+          section: 'mb-3',
+          header: 'mb-3 pb-2',
+          item: 'mb-2',
+          list: 'space-y-0.5',
+        },
+        normal: {
+          root: 'p-8 text-[13.5px] leading-relaxed',
+          section: 'mb-5',
+          header: 'mb-5 pb-3',
+          item: 'mb-3',
+          list: 'space-y-1',
+        },
+        spacious: {
+          root: 'p-10 text-[14px] leading-loose',
+          section: 'mb-6',
+          header: 'mb-6 pb-4',
+          item: 'mb-4',
+          list: 'space-y-1.5',
+        },
+      }[theme.spacing || 'normal'];
 
   const isHidden = (sec: string) => data.hiddenSections?.includes(sec);
 
@@ -101,12 +171,26 @@ export const UniversalResumeRenderer: React.FC<UniversalResumeRendererProps> = (
   const isTechFocused = ['tech', 'data-scientist', 'data-analyst', 'ai-ml-engineer'].includes(template);
   const isFresherFocused = ['fresher', 'college-student', 'internship', 'graduate'].includes(template) || !!data.isFresherMode;
 
-  const renderBullet = (bullet: string, idx: number) => {
+  const renderBullet = (bullet: string, idx: number, onBulletEdit?: (newVal: string) => void) => {
     if (!isHeatmap) {
       return (
-        <li key={idx} className="text-slate-800 flex items-start">
+        <li key={idx} className={`text-slate-800 flex items-start ${textAlignClass}`}>
           <span className="inline-block w-1.5 h-1.5 rounded-full bg-slate-500 mt-1.5 mr-2 shrink-0" />
-          <span>{bullet}</span>
+          {isDirectEdit && onBulletEdit ? (
+            <span
+              contentEditable
+              suppressContentEditableWarning
+              onBlur={(e) => {
+                const text = e.currentTarget.textContent || '';
+                if (text !== bullet) onBulletEdit(text);
+              }}
+              className="outline-dashed outline-1 outline-blue-400 hover:outline-blue-600 px-0.5 rounded cursor-text"
+            >
+              {bullet}
+            </span>
+          ) : (
+            <span>{bullet}</span>
+          )}
         </li>
       );
     }
@@ -127,7 +211,7 @@ export const UniversalResumeRenderer: React.FC<UniversalResumeRendererProps> = (
         : '🟡 Moderate Impact';
 
     return (
-      <li key={idx} className={`p-1.5 rounded border ${badgeClass} text-xs transition-colors my-1`}>
+      <li key={idx} className={`p-1.5 rounded border ${badgeClass} text-xs transition-colors my-1 ${textAlignClass}`}>
         <div className="flex items-center justify-between font-semibold text-[10px] uppercase tracking-wider mb-0.5 opacity-85">
           <span>{label}</span>
         </div>
@@ -136,38 +220,39 @@ export const UniversalResumeRenderer: React.FC<UniversalResumeRendererProps> = (
     );
   };
 
-  // Section Heading Component
-  const SectionHeader = ({ title, icon: Icon }: { title: string; icon?: React.ElementType }) => {
-    if (isMinimal) {
-      return (
-        <div className="border-b border-slate-400 pb-1 mb-2 mt-4">
-          <h2 className="text-xs font-bold tracking-widest uppercase text-slate-900 flex items-center gap-1.5">
-            {Icon && <Icon className="w-3.5 h-3.5 text-slate-700" />}
-            {title}
-          </h2>
-        </div>
-      );
-    }
+  const renderSectionHeader = (title: string, icon?: React.ElementType) => (
+    <SectionHeader
+      title={title}
+      icon={icon}
+      primaryColor={primaryColor}
+      isMinimal={isMinimal}
+      dividerStyle={dividerStyle}
+      boldHeadings={boldHeadings}
+    />
+  );
 
-    return (
-      <div className="pb-1 mb-2.5 mt-4 border-b" style={{ borderColor: `${primaryColor}40` }}>
-        <h2
-          className="text-xs font-bold tracking-wider uppercase flex items-center gap-1.5"
-          style={{ color: primaryColor }}
-        >
-          {Icon && <Icon className="w-3.5 h-3.5" />}
-          {title}
-        </h2>
-      </div>
-    );
+  const renderVerticalDivider = () => {
+    if (theme.showVerticalDividers === false) return null;
+    return <span className="text-slate-300 select-none font-light">|</span>;
   };
 
   return (
     <div
       id={id}
-      className={`bg-white text-slate-900 shadow-md mx-auto w-full transition-all duration-200 ${fontClass} ${spacingClasses.root} ${className}`}
-      style={{ minHeight: '1056px', maxWidth: '816px' }}
+      className={`bg-white text-slate-900 shadow-md mx-auto w-full transition-all duration-200 ${fontClass} ${spacingClasses.root} ${isFitToOnePage ? 'fit-to-one-page' : ''} ${className}`}
+      style={{
+        minHeight: isFitToOnePage ? 'auto' : '1056px',
+        maxWidth: '816px',
+      }}
     >
+      {/* Direct Edit Mode Indicator */}
+      {isDirectEdit && (
+        <div className="no-print bg-blue-50 border border-blue-200 rounded px-3 py-1.5 mb-3 text-xs text-blue-700 flex items-center justify-between">
+          <span className="font-semibold">✏️ Direct In-Place Edit Mode Active: Click on any text below to edit it directly.</span>
+          <span className="text-[10px] bg-blue-100 px-2 py-0.5 rounded font-mono">Auto-syncs</span>
+        </div>
+      )}
+
       {/* Header Band Style (for Executive / Modern Creative) */}
       {isHeaderBand ? (
         <div
@@ -176,8 +261,34 @@ export const UniversalResumeRenderer: React.FC<UniversalResumeRendererProps> = (
         >
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div>
-              <h1 className="text-2xl font-bold tracking-tight">{personalInfo.fullName || 'Your Name'}</h1>
-              <p className="text-sm font-medium text-white/90 mt-0.5">{personalInfo.jobTitle || 'Professional Title'}</p>
+              <h1 className="text-2xl font-bold tracking-tight">
+                {isDirectEdit ? (
+                  <span
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => onUpdateData?.({ ...data, personalInfo: { ...personalInfo, fullName: e.currentTarget.textContent || '' } })}
+                    className="outline-dashed outline-1 outline-white/80 px-1 rounded cursor-text"
+                  >
+                    {personalInfo.fullName || 'Your Name'}
+                  </span>
+                ) : (
+                  personalInfo.fullName || 'Your Name'
+                )}
+              </h1>
+              <p className="text-sm font-medium text-white/90 mt-0.5">
+                {isDirectEdit ? (
+                  <span
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => onUpdateData?.({ ...data, personalInfo: { ...personalInfo, jobTitle: e.currentTarget.textContent || '' } })}
+                    className="outline-dashed outline-1 outline-white/80 px-1 rounded cursor-text"
+                  >
+                    {personalInfo.jobTitle || 'Professional Title'}
+                  </span>
+                ) : (
+                  personalInfo.jobTitle || 'Professional Title'
+                )}
+              </p>
             </div>
             {data.isMasterResume && (
               <span className="bg-white/20 text-white text-[10px] font-semibold px-2 py-0.5 rounded uppercase tracking-wider">
@@ -185,39 +296,81 @@ export const UniversalResumeRenderer: React.FC<UniversalResumeRendererProps> = (
               </span>
             )}
           </div>
-          <div className="flex flex-wrap gap-y-1 gap-x-4 text-xs text-white/80 mt-3 pt-3 border-t border-white/20">
+          <div className="flex flex-wrap items-center gap-y-1 gap-x-3 text-xs text-white/80 mt-3 pt-3 border-t border-white/20">
             {personalInfo.email && (
               <span className="flex items-center gap-1"><Mail className="w-3 h-3" /> {personalInfo.email}</span>
             )}
             {personalInfo.phone && (
-              <span className="flex items-center gap-1"><Phone className="w-3 h-3" /> {personalInfo.phone}</span>
+              <>
+                {renderVerticalDivider()}
+                <span className="flex items-center gap-1"><Phone className="w-3 h-3" /> {personalInfo.phone}</span>
+              </>
             )}
             {personalInfo.location && (
-              <span className="flex items-center gap-1"><MapPin className="w-3 h-3" /> {personalInfo.location}</span>
+              <>
+                {renderVerticalDivider()}
+                <span className="flex items-center gap-1"><MapPin className="w-3 h-3" /> {personalInfo.location}</span>
+              </>
             )}
             {personalInfo.linkedin && (
-              <span className="flex items-center gap-1"><Linkedin className="w-3 h-3" /> {personalInfo.linkedin.replace(/^https?:\/\/(www\.)?/, '')}</span>
+              <>
+                {renderVerticalDivider()}
+                <span className="flex items-center gap-1"><Linkedin className="w-3 h-3" /> {personalInfo.linkedin.replace(/^https?:\/\/(www\.)?/, '')}</span>
+              </>
             )}
             {personalInfo.github && (
-              <span className="flex items-center gap-1"><Github className="w-3 h-3" /> {personalInfo.github.replace(/^https?:\/\/(www\.)?/, '')}</span>
+              <>
+                {renderVerticalDivider()}
+                <span className="flex items-center gap-1"><Github className="w-3 h-3" /> {personalInfo.github.replace(/^https?:\/\/(www\.)?/, '')}</span>
+              </>
             )}
             {personalInfo.website && (
-              <span className="flex items-center gap-1"><Globe className="w-3 h-3" /> {personalInfo.website.replace(/^https?:\/\/(www\.)?/, '')}</span>
+              <>
+                {renderVerticalDivider()}
+                <span className="flex items-center gap-1"><Globe className="w-3 h-3" /> {personalInfo.website.replace(/^https?:\/\/(www\.)?/, '')}</span>
+              </>
             )}
           </div>
         </div>
       ) : (
         /* Standard / ATS / Minimal Header */
-        <header className={spacingClasses.header}>
+        <header className={`${spacingClasses.header} resume-section-block`}>
           <div className="text-center sm:text-left flex flex-col sm:flex-row justify-between items-start">
             <div>
               <h1
-                className="text-2xl font-bold tracking-tight text-slate-950"
-                style={{ color: template === 'classic' || isMinimal ? '#0f172a' : primaryColor }}
+                className="text-2xl tracking-tight text-slate-950"
+                style={{
+                  color: template === 'classic' || isMinimal ? '#0f172a' : primaryColor,
+                  fontWeight: boldHeadings ? 800 : 700,
+                }}
               >
-                {personalInfo.fullName || 'Your Full Name'}
+                {isDirectEdit ? (
+                  <span
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => onUpdateData?.({ ...data, personalInfo: { ...personalInfo, fullName: e.currentTarget.textContent || '' } })}
+                    className="outline-dashed outline-1 outline-blue-400 px-1 rounded cursor-text"
+                  >
+                    {personalInfo.fullName || 'Your Full Name'}
+                  </span>
+                ) : (
+                  personalInfo.fullName || 'Your Full Name'
+                )}
               </h1>
-              <p className="text-sm font-medium text-slate-600 mt-0.5">{personalInfo.jobTitle || 'Target Career Title'}</p>
+              <p className="text-sm font-medium text-slate-600 mt-0.5">
+                {isDirectEdit ? (
+                  <span
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => onUpdateData?.({ ...data, personalInfo: { ...personalInfo, jobTitle: e.currentTarget.textContent || '' } })}
+                    className="outline-dashed outline-1 outline-blue-400 px-1 rounded cursor-text"
+                  >
+                    {personalInfo.jobTitle || 'Target Career Title'}
+                  </span>
+                ) : (
+                  personalInfo.jobTitle || 'Target Career Title'
+                )}
+              </p>
             </div>
             <div className="flex items-center gap-2 mt-2 sm:mt-0">
               {data.isMasterResume && (
@@ -234,24 +387,39 @@ export const UniversalResumeRenderer: React.FC<UniversalResumeRendererProps> = (
           </div>
 
           {/* Contact Bar */}
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600 mt-2.5 pt-2 border-t border-slate-200">
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-slate-600 mt-2.5 pt-2 border-t border-slate-200">
             {personalInfo.email && (
               <span className="flex items-center gap-1"><Mail className="w-3 h-3 text-slate-400" /> {personalInfo.email}</span>
             )}
             {personalInfo.phone && (
-              <span className="flex items-center gap-1"><Phone className="w-3 h-3 text-slate-400" /> {personalInfo.phone}</span>
+              <>
+                {renderVerticalDivider()}
+                <span className="flex items-center gap-1"><Phone className="w-3 h-3 text-slate-400" /> {personalInfo.phone}</span>
+              </>
             )}
             {personalInfo.location && (
-              <span className="flex items-center gap-1"><MapPin className="w-3 h-3 text-slate-400" /> {personalInfo.location}</span>
+              <>
+                {renderVerticalDivider()}
+                <span className="flex items-center gap-1"><MapPin className="w-3 h-3 text-slate-400" /> {personalInfo.location}</span>
+              </>
             )}
             {personalInfo.linkedin && (
-              <span className="flex items-center gap-1"><Linkedin className="w-3 h-3 text-slate-400" /> {personalInfo.linkedin.replace(/^https?:\/\/(www\.)?/, '')}</span>
+              <>
+                {renderVerticalDivider()}
+                <span className="flex items-center gap-1"><Linkedin className="w-3 h-3 text-slate-400" /> {personalInfo.linkedin.replace(/^https?:\/\/(www\.)?/, '')}</span>
+              </>
             )}
             {personalInfo.github && (
-              <span className="flex items-center gap-1"><Github className="w-3 h-3 text-slate-400" /> {personalInfo.github.replace(/^https?:\/\/(www\.)?/, '')}</span>
+              <>
+                {renderVerticalDivider()}
+                <span className="flex items-center gap-1"><Github className="w-3 h-3 text-slate-400" /> {personalInfo.github.replace(/^https?:\/\/(www\.)?/, '')}</span>
+              </>
             )}
             {personalInfo.website && (
-              <span className="flex items-center gap-1"><Globe className="w-3 h-3 text-slate-400" /> {personalInfo.website.replace(/^https?:\/\/(www\.)?/, '')}</span>
+              <>
+                {renderVerticalDivider()}
+                <span className="flex items-center gap-1"><Globe className="w-3 h-3 text-slate-400" /> {personalInfo.website.replace(/^https?:\/\/(www\.)?/, '')}</span>
+              </>
             )}
           </div>
         </header>
@@ -277,11 +445,11 @@ export const UniversalResumeRenderer: React.FC<UniversalResumeRendererProps> = (
           <aside className="col-span-4 space-y-4 border-r border-slate-200 pr-4">
             {/* Skills */}
             {!isHidden('skills') && data.skills?.length > 0 && (
-              <div>
-                <SectionHeader title="Skills & Tech" />
+              <div className="resume-section-block">
+                {renderSectionHeader("Skills & Tech")}
                 <div className="space-y-2.5">
                   {data.skills.map((cat) => (
-                    <div key={cat.id}>
+                    <div key={cat.id} className="resume-item-block">
                       <h3 className="text-[11px] font-bold text-slate-700 uppercase tracking-wide">{cat.name}</h3>
                       <div className="flex flex-wrap gap-1 mt-1">
                         {cat.skills.map((sk, i) => (
@@ -301,11 +469,11 @@ export const UniversalResumeRenderer: React.FC<UniversalResumeRendererProps> = (
 
             {/* Languages */}
             {!isHidden('languages') && (data.languages?.length ?? 0) > 0 && (
-              <div>
-                <SectionHeader title="Languages" icon={Languages} />
+              <div className="resume-section-block">
+                {renderSectionHeader("Languages", Languages)}
                 <div className="space-y-1 text-xs">
                   {data.languages!.map((lang) => (
-                    <div key={lang.id} className="flex justify-between text-slate-700">
+                    <div key={lang.id} className="flex justify-between text-slate-700 resume-item-block">
                       <span className="font-medium">{lang.language}</span>
                       <span className="text-slate-500">{lang.proficiency}</span>
                     </div>
@@ -316,11 +484,11 @@ export const UniversalResumeRenderer: React.FC<UniversalResumeRendererProps> = (
 
             {/* Certifications */}
             {!isHidden('certifications') && data.certifications?.length > 0 && (
-              <div>
-                <SectionHeader title="Certifications" icon={Award} />
+              <div className="resume-section-block">
+                {renderSectionHeader("Certifications", Award)}
                 <div className="space-y-2">
                   {data.certifications.map((cert) => (
-                    <div key={cert.id} className="text-xs">
+                    <div key={cert.id} className="text-xs resume-item-block">
                       <div className="font-semibold text-slate-900">{cert.name}</div>
                       <div className="text-slate-500 text-[11px]">{cert.issuer} • {cert.date}</div>
                     </div>
@@ -331,11 +499,11 @@ export const UniversalResumeRenderer: React.FC<UniversalResumeRendererProps> = (
 
             {/* Education in sidebar for two-col */}
             {!isHidden('education') && data.education?.length > 0 && (
-              <div>
-                <SectionHeader title="Education" icon={BookOpen} />
+              <div className="resume-section-block">
+                {renderSectionHeader("Education", BookOpen)}
                 <div className="space-y-2">
                   {data.education.map((edu) => (
-                    <div key={edu.id} className="text-xs">
+                    <div key={edu.id} className="text-xs resume-item-block">
                       <div className="font-semibold text-slate-900">{edu.degree} in {edu.fieldOfStudy}</div>
                       <div className="text-slate-600">{edu.institution}</div>
                       <div className="text-slate-500 text-[11px]">{edu.startDate} – {edu.endDate} {edu.gpa ? `• GPA: ${edu.gpa}` : ''}</div>
@@ -351,26 +519,48 @@ export const UniversalResumeRenderer: React.FC<UniversalResumeRendererProps> = (
         <main className={isTwoCol ? 'col-span-8 space-y-4' : 'space-y-4'}>
           {/* Summary or Career Objective */}
           {!isHidden('summary') && data.summary && (
-            <div>
-              <SectionHeader title="Professional Summary" />
-              <p className="text-slate-700 leading-relaxed text-justify">{data.summary}</p>
+            <div className="resume-section-block">
+              {renderSectionHeader("Professional Summary")}
+              {isDirectEdit ? (
+                <p
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => onUpdateData?.({ ...data, summary: e.currentTarget.textContent || '' })}
+                  className={`text-slate-700 leading-relaxed outline-dashed outline-1 outline-blue-400 px-1 rounded cursor-text ${textAlignClass}`}
+                >
+                  {data.summary}
+                </p>
+              ) : (
+                <p className={`text-slate-700 leading-relaxed ${textAlignClass}`}>{data.summary}</p>
+              )}
             </div>
           )}
 
           {!isHidden('careerObjective') && data.careerObjective && (
-            <div>
-              <SectionHeader title="Career Objective" />
-              <p className="text-slate-700 leading-relaxed text-justify">{data.careerObjective}</p>
+            <div className="resume-section-block">
+              {renderSectionHeader("Career Objective")}
+              {isDirectEdit ? (
+                <p
+                  contentEditable
+                  suppressContentEditableWarning
+                  onBlur={(e) => onUpdateData?.({ ...data, careerObjective: e.currentTarget.textContent || '' })}
+                  className={`text-slate-700 leading-relaxed outline-dashed outline-1 outline-blue-400 px-1 rounded cursor-text ${textAlignClass}`}
+                >
+                  {data.careerObjective}
+                </p>
+              ) : (
+                <p className={`text-slate-700 leading-relaxed ${textAlignClass}`}>{data.careerObjective}</p>
+              )}
             </div>
           )}
 
           {/* If Fresher / Student mode or Technical template, display Education / Projects first */}
           {isFresherFocused && !isTwoCol && !isHidden('education') && data.education?.length > 0 && (
-            <div>
-              <SectionHeader title="Education & Academics" icon={BookOpen} />
+            <div className="resume-section-block">
+              {renderSectionHeader("Education & Academics", BookOpen)}
               <div className="space-y-2.5">
                 {data.education.map((edu) => (
-                  <div key={edu.id} className="text-xs">
+                  <div key={edu.id} className="text-xs resume-item-block">
                     <div className="flex justify-between items-baseline font-semibold text-slate-900">
                       <span>{edu.degree} in {edu.fieldOfStudy}</span>
                       <span className="text-slate-500 text-[11px]">{edu.startDate} – {edu.endDate}</span>
@@ -387,11 +577,11 @@ export const UniversalResumeRenderer: React.FC<UniversalResumeRendererProps> = (
 
           {/* Technical Skills Matrix (Single Column view) */}
           {!isTwoCol && !isHidden('skills') && data.skills?.length > 0 && (
-            <div>
-              <SectionHeader title={isTechFocused ? 'Technical Skills Matrix' : 'Core Competencies'} />
+            <div className="resume-section-block">
+              {renderSectionHeader(isTechFocused ? 'Technical Skills Matrix' : 'Core Competencies')}
               <div className="space-y-1.5 text-xs">
                 {data.skills.map((cat) => (
-                  <div key={cat.id} className="flex flex-col sm:flex-row sm:items-baseline gap-1">
+                  <div key={cat.id} className="flex flex-col sm:flex-row sm:items-baseline gap-1 resume-item-block">
                     <span className="font-bold text-slate-800 min-w-36 text-[11.5px]">{cat.name}:</span>
                     <span className="text-slate-700">{cat.skills.join(' • ')}</span>
                   </div>
@@ -402,23 +592,65 @@ export const UniversalResumeRenderer: React.FC<UniversalResumeRendererProps> = (
 
           {/* Work Experience */}
           {!isHidden('experience') && data.experience?.length > 0 && (
-            <div>
-              <SectionHeader title="Professional Experience" />
+            <div className="resume-section-block">
+              {renderSectionHeader("Professional Experience")}
               <div className="space-y-3">
-                {data.experience.map((exp) => (
-                  <div key={exp.id} className={spacingClasses.item}>
+                {data.experience.map((exp, expIdx) => (
+                  <div key={exp.id} className={`${spacingClasses.item} resume-item-block`}>
                     <div className="flex justify-between items-baseline font-semibold text-slate-900">
-                      <span className="text-sm">{exp.role}</span>
+                      <span className="text-sm">
+                        {isDirectEdit ? (
+                          <span
+                            contentEditable
+                            suppressContentEditableWarning
+                            onBlur={(e) => {
+                              const newExp = [...data.experience];
+                              newExp[expIdx] = { ...exp, role: e.currentTarget.textContent || '' };
+                              onUpdateData?.({ ...data, experience: newExp });
+                            }}
+                            className="outline-dashed outline-1 outline-blue-400 px-0.5 rounded cursor-text"
+                          >
+                            {exp.role}
+                          </span>
+                        ) : (
+                          exp.role
+                        )}
+                      </span>
                       <span className="text-slate-500 text-xs font-normal">
                         {exp.startDate} – {exp.current ? 'Present' : exp.endDate}
                       </span>
                     </div>
                     <div className="flex justify-between text-xs text-slate-600 mb-1">
-                      <span className="font-medium" style={{ color: primaryColor }}>{exp.company}</span>
+                      <span className="font-medium" style={{ color: primaryColor }}>
+                        {isDirectEdit ? (
+                          <span
+                            contentEditable
+                            suppressContentEditableWarning
+                            onBlur={(e) => {
+                              const newExp = [...data.experience];
+                              newExp[expIdx] = { ...exp, company: e.currentTarget.textContent || '' };
+                              onUpdateData?.({ ...data, experience: newExp });
+                            }}
+                            className="outline-dashed outline-1 outline-blue-400 px-0.5 rounded cursor-text"
+                          >
+                            {exp.company}
+                          </span>
+                        ) : (
+                          exp.company
+                        )}
+                      </span>
                       <span>{exp.location}</span>
                     </div>
                     <ul className={`list-none ${spacingClasses.list}`}>
-                      {exp.highlights.map((bullet, bIdx) => renderBullet(bullet, bIdx))}
+                      {exp.highlights.map((bullet, bIdx) =>
+                        renderBullet(bullet, bIdx, (newVal) => {
+                          const newExp = [...data.experience];
+                          const newHighlights = [...exp.highlights];
+                          newHighlights[bIdx] = newVal;
+                          newExp[expIdx] = { ...exp, highlights: newHighlights };
+                          onUpdateData?.({ ...data, experience: newExp });
+                        })
+                      )}
                     </ul>
                   </div>
                 ))}
@@ -426,13 +658,13 @@ export const UniversalResumeRenderer: React.FC<UniversalResumeRendererProps> = (
             </div>
           )}
 
-          {/* Internships (Especially crucial for Fresher Mode) */}
+          {/* Internships */}
           {!isHidden('internships') && (data.internships?.length ?? 0) > 0 && (
-            <div>
-              <SectionHeader title="Internships & Co-Ops" />
+            <div className="resume-section-block">
+              {renderSectionHeader("Internships & Co-Ops")}
               <div className="space-y-3">
                 {data.internships!.map((intern) => (
-                  <div key={intern.id} className={spacingClasses.item}>
+                  <div key={intern.id} className={`${spacingClasses.item} resume-item-block`}>
                     <div className="flex justify-between items-baseline font-semibold text-slate-900">
                       <span className="text-sm">{intern.role}</span>
                       <span className="text-slate-500 text-xs font-normal">
@@ -454,11 +686,11 @@ export const UniversalResumeRenderer: React.FC<UniversalResumeRendererProps> = (
 
           {/* Projects */}
           {!isHidden('projects') && data.projects?.length > 0 && (
-            <div>
-              <SectionHeader title="Key Projects & Open Source" />
+            <div className="resume-section-block">
+              {renderSectionHeader("Key Projects & Open Source")}
               <div className="space-y-3">
                 {data.projects.map((proj) => (
-                  <div key={proj.id} className={spacingClasses.item}>
+                  <div key={proj.id} className={`${spacingClasses.item} resume-item-block`}>
                     <div className="flex justify-between items-baseline font-semibold text-slate-900">
                       <div className="flex items-center gap-2">
                         <span className="text-sm">{proj.title}</span>
@@ -485,7 +717,7 @@ export const UniversalResumeRenderer: React.FC<UniversalResumeRendererProps> = (
                       </div>
                       {proj.subtitle && <span className="text-slate-500 text-xs font-normal">{proj.subtitle}</span>}
                     </div>
-                    <p className="text-slate-700 text-xs mt-0.5 leading-relaxed">{proj.description}</p>
+                    <p className={`text-slate-700 text-xs mt-0.5 leading-relaxed ${textAlignClass}`}>{proj.description}</p>
                     {proj.technologies?.length > 0 && (
                       <div className="text-[11px] text-slate-500 mt-1">
                         <span className="font-semibold text-slate-700">Technologies: </span>
@@ -500,11 +732,11 @@ export const UniversalResumeRenderer: React.FC<UniversalResumeRendererProps> = (
 
           {/* Standard Education (Single column non-fresher) */}
           {!isFresherFocused && !isTwoCol && !isHidden('education') && data.education?.length > 0 && (
-            <div>
-              <SectionHeader title="Education" icon={BookOpen} />
+            <div className="resume-section-block">
+              {renderSectionHeader("Education", BookOpen)}
               <div className="space-y-2">
                 {data.education.map((edu) => (
-                  <div key={edu.id} className="text-xs">
+                  <div key={edu.id} className="text-xs resume-item-block">
                     <div className="flex justify-between items-baseline font-semibold text-slate-900">
                       <span>{edu.degree} in {edu.fieldOfStudy}</span>
                       <span className="text-slate-500 text-[11px]">{edu.startDate} – {edu.endDate}</span>
@@ -521,11 +753,11 @@ export const UniversalResumeRenderer: React.FC<UniversalResumeRendererProps> = (
 
           {/* Certifications (Single column) */}
           {!isTwoCol && !isHidden('certifications') && data.certifications?.length > 0 && (
-            <div>
-              <SectionHeader title="Certifications" icon={Award} />
+            <div className="resume-section-block">
+              {renderSectionHeader("Certifications", Award)}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                 {data.certifications.map((cert) => (
-                  <div key={cert.id} className="flex justify-between items-baseline">
+                  <div key={cert.id} className="flex justify-between items-baseline resume-item-block">
                     <span className="font-semibold text-slate-800">{cert.name}</span>
                     <span className="text-slate-500 text-[11px] shrink-0 ml-2">{cert.issuer} ({cert.date})</span>
                   </div>
@@ -536,11 +768,11 @@ export const UniversalResumeRenderer: React.FC<UniversalResumeRendererProps> = (
 
           {/* Achievements */}
           {!isHidden('achievements') && (data.achievements?.length ?? 0) > 0 && (
-            <div>
-              <SectionHeader title="Key Achievements & Awards" icon={Star} />
+            <div className="resume-section-block">
+              {renderSectionHeader("Key Achievements & Awards", Star)}
               <div className="space-y-1.5 text-xs">
                 {data.achievements!.map((ach) => (
-                  <div key={ach.id} className="flex items-start gap-2">
+                  <div key={ach.id} className="flex items-start gap-2 resume-item-block">
                     <span className="w-1.5 h-1.5 rounded-full bg-amber-500 mt-1.5 shrink-0" />
                     <div>
                       <span className="font-bold text-slate-900">{ach.title}: </span>
@@ -555,11 +787,11 @@ export const UniversalResumeRenderer: React.FC<UniversalResumeRendererProps> = (
 
           {/* Publications */}
           {!isHidden('publications') && (data.publications?.length ?? 0) > 0 && (
-            <div>
-              <SectionHeader title="Publications & Research" />
+            <div className="resume-section-block">
+              {renderSectionHeader("Publications & Research")}
               <div className="space-y-1.5 text-xs">
                 {data.publications!.map((pub) => (
-                  <div key={pub.id}>
+                  <div key={pub.id} className="resume-item-block">
                     <div className="font-semibold text-slate-900">
                       {pub.title} – <span className="font-normal text-slate-600">{pub.publisher} ({pub.date})</span>
                     </div>
@@ -572,11 +804,11 @@ export const UniversalResumeRenderer: React.FC<UniversalResumeRendererProps> = (
 
           {/* Leadership & Volunteer */}
           {!isHidden('leadership') && (data.leadership?.length ?? 0) > 0 && (
-            <div>
-              <SectionHeader title="Leadership & Activities" icon={ShieldCheck} />
+            <div className="resume-section-block">
+              {renderSectionHeader("Leadership & Activities", ShieldCheck)}
               <div className="space-y-1.5 text-xs">
                 {data.leadership!.map((lead) => (
-                  <div key={lead.id}>
+                  <div key={lead.id} className="resume-item-block">
                     <div className="flex justify-between font-semibold text-slate-900">
                       <span>{lead.title}, {lead.organization}</span>
                       <span className="text-slate-500 font-normal text-[11px]">{lead.date}</span>
@@ -589,11 +821,11 @@ export const UniversalResumeRenderer: React.FC<UniversalResumeRendererProps> = (
           )}
 
           {!isHidden('volunteer') && (data.volunteer?.length ?? 0) > 0 && (
-            <div>
-              <SectionHeader title="Volunteer Experience" icon={HeartHandshake} />
+            <div className="resume-section-block">
+              {renderSectionHeader("Volunteer Experience", HeartHandshake)}
               <div className="space-y-1.5 text-xs">
                 {data.volunteer!.map((vol) => (
-                  <div key={vol.id}>
+                  <div key={vol.id} className="resume-item-block">
                     <div className="flex justify-between font-semibold text-slate-900">
                       <span>{vol.role}, {vol.organization}</span>
                       <span className="text-slate-500 font-normal text-[11px]">{vol.date}</span>
@@ -607,8 +839,8 @@ export const UniversalResumeRenderer: React.FC<UniversalResumeRendererProps> = (
 
           {/* Languages (Single column) */}
           {!isTwoCol && !isHidden('languages') && (data.languages?.length ?? 0) > 0 && (
-            <div>
-              <SectionHeader title="Languages" icon={Languages} />
+            <div className="resume-section-block">
+              {renderSectionHeader("Languages", Languages)}
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-700">
                 {data.languages!.map((lang) => (
                   <span key={lang.id}>
@@ -621,8 +853,8 @@ export const UniversalResumeRenderer: React.FC<UniversalResumeRendererProps> = (
 
           {/* Hobbies & Custom Sections */}
           {!isHidden('hobbies') && (data.hobbies?.length ?? 0) > 0 && (
-            <div>
-              <SectionHeader title="Interests & Hobbies" />
+            <div className="resume-section-block">
+              {renderSectionHeader("Interests & Hobbies")}
               <p className="text-xs text-slate-700">{data.hobbies!.join(' • ')}</p>
             </div>
           )}
@@ -630,11 +862,11 @@ export const UniversalResumeRenderer: React.FC<UniversalResumeRendererProps> = (
           {!isHidden('customSections') && (data.customSections?.length ?? 0) > 0 && (
             <div className="space-y-3">
               {data.customSections!.map((sec) => (
-                <div key={sec.id}>
-                  <SectionHeader title={sec.title} />
+                <div key={sec.id} className="resume-section-block">
+                  {renderSectionHeader(sec.title)}
                   <div className="space-y-1.5 text-xs">
                     {sec.items.map((it) => (
-                      <div key={it.id}>
+                      <div key={it.id} className="resume-item-block">
                         <div className="flex justify-between font-semibold text-slate-900">
                           <span>{it.title} {it.subtitle ? `• ${it.subtitle}` : ''}</span>
                           {it.date && <span className="text-slate-500 font-normal text-[11px]">{it.date}</span>}
