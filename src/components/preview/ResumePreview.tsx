@@ -45,6 +45,7 @@ export const ResumePreview: React.FC<Props> = ({ data, theme, onThemeChange, onU
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [showToolsBar, setShowToolsBar] = useState<boolean>(true);
   const resumeRef = useRef<HTMLDivElement>(null);
+  const pdfCaptureRef = useRef<HTMLDivElement>(null);
 
   // System Print Export
   const handleExportPdf = () => {
@@ -58,43 +59,19 @@ export const ResumePreview: React.FC<Props> = ({ data, theme, onThemeChange, onU
     }
   };
 
-  // High-Resolution Direct PDF Download (Ensures No Cutoffs)
+  // High-Resolution Direct PDF Download (Ensures 100% Content & Zero Cutoffs)
   const handleDownloadDirectPdf = async () => {
-    if (!resumeRef.current) return;
     setIsDownloadingPdf(true);
     try {
-      const sourceElement = resumeRef.current;
+      // Brief pause to allow the dedicated capture element to render with full styles & webfonts
+      await new Promise((resolve) => setTimeout(resolve, 150));
 
-      // Render into a clean, unconstrained off-screen A4 container to prevent viewport/scroll clipping
-      const container = document.createElement('div');
-      container.style.position = 'fixed';
-      container.style.left = '-10000px';
-      container.style.top = '0';
-      container.style.width = '794px'; // 210mm @ 96 DPI
-      container.style.background = '#ffffff';
-      container.style.margin = '0';
-      container.style.padding = '0';
-      container.style.zIndex = '-99999';
-      container.style.boxSizing = 'border-box';
+      const captureElement = pdfCaptureRef.current;
+      if (!captureElement) {
+        throw new Error('PDF capture element unavailable');
+      }
 
-      const clone = sourceElement.cloneNode(true) as HTMLElement;
-      clone.style.transform = 'none';
-      clone.style.width = '100%';
-      clone.style.maxWidth = '794px';
-      clone.style.height = 'auto';
-      clone.style.minHeight = '1123px';
-      clone.style.boxShadow = 'none';
-      clone.style.border = 'none';
-      clone.style.margin = '0';
-      clone.style.borderRadius = '0';
-
-      container.appendChild(clone);
-      document.body.appendChild(container);
-
-      // Brief pause to allow fonts and layout to compute in clone
-      await new Promise((r) => setTimeout(r, 60));
-
-      const canvas = await html2canvas(clone, {
+      const canvas = await html2canvas(captureElement, {
         scale: 2, // 300 DPI high resolution
         useCORS: true,
         allowTaint: true,
@@ -104,9 +81,6 @@ export const ResumePreview: React.FC<Props> = ({ data, theme, onThemeChange, onU
         windowWidth: 1024,
       });
 
-      document.body.removeChild(container);
-
-      const imgData = canvas.toDataURL('image/jpeg', 0.98);
       const pdf = new jsPDF({
         orientation: 'portrait',
         unit: 'mm',
@@ -115,39 +89,62 @@ export const ResumePreview: React.FC<Props> = ({ data, theme, onThemeChange, onU
 
       const a4Width = 210;
       const a4Height = 297;
-      const totalPdfHeight = (canvas.height * a4Width) / canvas.width;
+      // Pixel height of 1 standard A4 page based on current canvas scale
+      const pxPerMm = canvas.width / a4Width;
+      const pageHeightPx = Math.round(a4Height * pxPerMm);
 
-      if (theme.fitToOnePage || totalPdfHeight <= a4Height + 3) {
-        // Single Page: if content is slightly taller than 297mm, scale proportionally so 100% of content fits without clipping
-        if (totalPdfHeight > a4Height) {
-          const scale = a4Height / totalPdfHeight;
-          const scaledWidth = a4Width * scale;
-          const xOffset = (a4Width - scaledWidth) / 2;
-          pdf.addImage(imgData, 'JPEG', xOffset, 0, scaledWidth, a4Height);
-        } else {
-          pdf.addImage(imgData, 'JPEG', 0, 0, a4Width, totalPdfHeight);
+      if (theme.fitToOnePage || canvas.height <= pageHeightPx + 20) {
+        // Single Page Mode: If slightly taller than 297mm, scale down proportionally so 100% of content fits on 1 page!
+        const pageCanvas = document.createElement('canvas');
+        pageCanvas.width = canvas.width;
+        pageCanvas.height = pageHeightPx;
+        const pageCtx = pageCanvas.getContext('2d');
+        if (pageCtx) {
+          pageCtx.fillStyle = '#ffffff';
+          pageCtx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+          const scale = canvas.height > pageHeightPx ? pageHeightPx / canvas.height : 1;
+          const targetW = canvas.width * scale;
+          const targetH = canvas.height * scale;
+          const offsetX = (pageCanvas.width - targetW) / 2;
+          pageCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height, offsetX, 0, targetW, targetH);
+          const pageImgData = pageCanvas.toDataURL('image/jpeg', 0.98);
+          pdf.addImage(pageImgData, 'JPEG', 0, 0, a4Width, a4Height);
         }
       } else {
-        // Multi-page clean slicing: Page 1, Page 2, Page 3 etc. with zero cut-off
-        let heightRemaining = totalPdfHeight;
+        // Multi-page slicing: Page 1, Page 2, Page 3 etc. without any cut-off
+        let currentY = 0;
         let page = 0;
 
-        while (heightRemaining > 0) {
-          if (page > 0) {
-            pdf.addPage();
+        while (currentY < canvas.height) {
+          const sliceHeight = Math.min(pageHeightPx, canvas.height - currentY);
+          const pageCanvas = document.createElement('canvas');
+          pageCanvas.width = canvas.width;
+          pageCanvas.height = pageHeightPx;
+          const pageCtx = pageCanvas.getContext('2d');
+          if (pageCtx) {
+            pageCtx.fillStyle = '#ffffff';
+            pageCtx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+            pageCtx.drawImage(
+              canvas,
+              0, currentY, canvas.width, sliceHeight,
+              0, 0, canvas.width, sliceHeight
+            );
+            const pageImgData = pageCanvas.toDataURL('image/jpeg', 0.98);
+            if (page > 0) {
+              pdf.addPage();
+            }
+            pdf.addImage(pageImgData, 'JPEG', 0, 0, a4Width, a4Height);
           }
-          const yPosition = -page * a4Height;
-          pdf.addImage(imgData, 'JPEG', 0, yPosition, a4Width, totalPdfHeight);
-          heightRemaining -= a4Height;
+          currentY += pageHeightPx;
           page++;
         }
       }
 
-      const fileName = `${(data.personalInfo.fullName || 'Resume').replace(/\s+/g, '_')}_CareerForge.pdf`;
+      const fileName = `${(data.personalInfo.fullName || 'Resume').trim().replace(/\s+/g, '_')}_CareerForge.pdf`;
       pdf.save(fileName);
     } catch (err) {
-      console.error('Direct PDF export error, falling back to window.print', err);
-      window.print();
+      console.error('Direct PDF export error:', err);
+      alert('Unable to generate direct PDF download. Please try again or use the Print button to save as PDF.');
     } finally {
       setIsDownloadingPdf(false);
     }
@@ -203,7 +200,45 @@ export const ResumePreview: React.FC<Props> = ({ data, theme, onThemeChange, onU
 
   return (
     <>
-      <div className="flex flex-col h-full bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-2xl">
+      {/* High-Resolution Dedicated Capture Element for Direct PDF Generation */}
+      <div
+        ref={pdfCaptureRef}
+        id="resume-pdf-capture-container"
+        className="no-print"
+        style={{
+          position: 'fixed',
+          left: isDownloadingPdf ? 0 : '-9999px',
+          top: 0,
+          width: '794px', // Standard 210mm @ 96 DPI
+          background: '#ffffff',
+          zIndex: isDownloadingPdf ? 99999 : -1,
+          opacity: isDownloadingPdf ? 1 : 0,
+          pointerEvents: 'none',
+          boxSizing: 'border-box',
+        }}
+      >
+        <UniversalResumeRenderer
+          data={data}
+          theme={theme}
+          onUpdateData={onUpdateData}
+          id="resume-pdf-capture-renderer"
+        />
+      </div>
+
+      {/* PDF Generation Progress Modal */}
+      {isDownloadingPdf && (
+        <div className="no-print fixed inset-0 z-[100000] bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center text-white p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 flex flex-col items-center gap-3 shadow-2xl max-w-sm text-center">
+            <Loader2 className="w-8 h-8 text-blue-400 animate-spin" />
+            <h3 className="font-semibold text-base">Generating High-Resolution PDF</h3>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Rendering all sections (Summary, Experience, Projects, Education, Certifications) with 100% completeness.
+            </p>
+          </div>
+        </div>
+      )}
+
+      <div className="no-print flex flex-col h-full bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-2xl">
         {/* Top Preview Toolbar */}
         <div className="no-print flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 bg-slate-950/90 border-b border-slate-800 text-slate-300">
           <div className="flex items-center gap-2">
@@ -467,7 +502,7 @@ export const ResumePreview: React.FC<Props> = ({ data, theme, onThemeChange, onU
 
       {/* Fullscreen Preview Modal */}
       {isFullscreen && (
-        <div className="fixed inset-0 z-50 bg-slate-950 flex flex-col p-4 overflow-hidden">
+        <div className="no-print fixed inset-0 z-50 bg-slate-950 flex flex-col p-4 overflow-hidden">
           <div className="flex items-center justify-between pb-3 border-b border-slate-800 max-w-5xl w-full mx-auto text-white shrink-0">
             <div className="flex items-center gap-2">
               <span className="font-bold text-sm">Full Screen Preview</span>

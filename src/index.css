@@ -29,29 +29,24 @@
     print-color-adjust: exact !important;
   }
 
-  /* Hide the entire interactive web app UI */
-  body * {
-    visibility: hidden !important;
-  }
-
-  .no-print {
+  /* Completely remove the screen web app and toolbars from print layout */
+  .no-print,
+  nav,
+  header,
+  footer,
+  aside,
+  button,
+  .preview-canvas-wrapper,
+  #resume-document,
+  #resume-document-fullscreen,
+  #resume-pdf-capture-container {
     display: none !important;
   }
 
-  /* Reveal ONLY the resume document and all its children */
-  #resume-document,
-  #resume-document *,
-  #resume-document-fullscreen,
-  #resume-document-fullscreen * {
-    visibility: visible !important;
-  }
-
-  /* Position the isolated resume at top left of physical paper */
-  #resume-document,
-  #resume-document-fullscreen {
-    position: absolute !important;
-    left: 0 !important;
-    top: 0 !important;
+  /* Display ONLY the dedicated print document in normal, static document flow */
+  #resume-print-document {
+    display: block !important;
+    position: static !important;
     width: 100% !important;
     max-width: 210mm !important;
     margin: 0 auto !important;
@@ -63,6 +58,21 @@
     overflow: visible !important;
     height: auto !important;
     min-height: auto !important;
+  }
+
+  #resume-print-document * {
+    visibility: visible !important;
+  }
+
+  #resume-print-document > div {
+    box-shadow: none !important;
+    border: none !important;
+    min-height: auto !important;
+    height: auto !important;
+    max-width: 210mm !important;
+    width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
   }
 
   /* Prevent sections and bullet items from being cut in half across pages */
@@ -77,7 +87,7 @@
 
   @page {
     size: A4 portrait;
-    margin: 8mm 10mm;
+    margin: 10mm 12mm;
   }
 }
 

@@ -15,6 +15,7 @@ import { CareerToolsView } from './components/tools/CareerToolsView';
 import { ApiKeyModal } from './components/modals/ApiKeyModal';
 import { AiEnhanceModal } from './components/modals/AiEnhanceModal';
 import { ImportResumeModal } from './components/modals/ImportResumeModal';
+import { UniversalResumeRenderer } from './components/templates/UniversalResumeRenderer';
 import confetti from 'canvas-confetti';
 
 const RESUME_STORAGE_KEY = 'CAREERFORGE_ACTIVE_RESUME_V2';
@@ -252,7 +253,17 @@ export function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col selection:bg-blue-600 selection:text-white">
+    <>
+      {/* Dedicated Static Print-Only Container (Zero UI clutter, natural multi-page flow) */}
+      <div id="resume-print-document" className="hidden print:block w-full max-w-[210mm] mx-auto bg-white text-slate-900">
+        <UniversalResumeRenderer
+          data={resumeData}
+          theme={resumeTheme}
+          id="resume-print-inner"
+        />
+      </div>
+
+      <div className="no-print min-h-screen bg-slate-950 text-slate-100 flex flex-col selection:bg-blue-600 selection:text-white">
       {/* Top Navigation */}
       <Navbar
         key={apiKeyVersion}
@@ -461,6 +472,7 @@ export function App() {
         onImportSuccess={handleImportSuccess}
       />
     </div>
+    </>
   );
 }
 
