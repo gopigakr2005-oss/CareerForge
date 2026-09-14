@@ -1281,4 +1281,251 @@ Return only the text of the letter without markdown or json.`;
   return `${today}\n\n${intro}\n\n${body1}\n\n${body2}\n\n${closing}`;
 }
 
+export interface OnePageCondensationResult {
+  condensedData: ResumeData;
+  summaryOfChanges: {
+    wordsReduced: number;
+    originalWordCount: number;
+    newWordCount: number;
+    percentReduction: number;
+    bulletsTightened: number;
+    sectionsOptimized: string[];
+    details: string[];
+  };
+}
+
+const STRONG_VERB_REPLACEMENTS: Record<string, string> = {
+  'worked on': 'Architected',
+  'worked with': 'Partnered with',
+  'helped with': 'Spearheaded',
+  'helped': 'Accelerated',
+  'assisted in': 'Engineered',
+  'assisted with': 'Streamlined',
+  'responsible for': 'Directed',
+  'handled': 'Governed',
+  'was tasked with': 'Executed',
+  'participated in': 'Collaborated on',
+  'contributed to': 'Delivered',
+  'duties included': 'Engineered',
+  'tasks involved': 'Administered',
+};
+
+function countResumeWords(data: ResumeData): number {
+  let count = 0;
+  const addText = (txt?: string) => {
+    if (!txt) return;
+    count += txt.trim().split(/\s+/).filter(Boolean).length;
+  };
+
+  addText(data.personalInfo.fullName);
+  addText(data.personalInfo.jobTitle);
+  addText(data.summary);
+  addText(data.careerObjective);
+
+  data.experience?.forEach((exp) => {
+    addText(exp.role);
+    addText(exp.company);
+    exp.highlights?.forEach((h) => addText(h));
+  });
+
+  data.internships?.forEach((intern) => {
+    addText(intern.role);
+    addText(intern.company);
+    intern.highlights?.forEach((h) => addText(h));
+  });
+
+  data.education?.forEach((edu) => {
+    addText(edu.degree);
+    addText(edu.institution);
+  });
+
+  data.projects?.forEach((proj) => {
+    addText(proj.title);
+    addText(proj.description);
+    proj.technologies?.forEach((t) => addText(t));
+  });
+
+  data.skills?.forEach((cat) => {
+    addText(cat.name);
+    cat.skills?.forEach((s) => addText(s));
+  });
+
+  data.certifications?.forEach((c) => addText(c.name));
+  return count;
+}
+
+function tightenBulletText(bullet: string): string {
+  let cleaned = bullet.trim().replace(/^[-•*]\s*/, '');
+
+  // Replace passive weak starters
+  for (const [weak, strong] of Object.entries(STRONG_VERB_REPLACEMENTS)) {
+    const reg = new RegExp(`^${weak}\\s+`, 'i');
+    if (reg.test(cleaned)) {
+      cleaned = cleaned.replace(reg, `${strong} `);
+      break;
+    }
+  }
+
+  // Eliminate filler phrases within the sentence
+  cleaned = cleaned
+    .replace(/\bin order to\b/gi, 'to')
+    .replace(/\bsuccessfully\b\s*/gi, '')
+    .replace(/\bon a daily basis\b/gi, '')
+    .replace(/\bdue to the fact that\b/gi, 'because')
+    .replace(/\bresponsible for\b\s*/gi, '')
+    .replace(/\bwith high efficiency and effectiveness\b/gi, 'efficiently')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  // Ensure first character is capitalized
+  if (cleaned.length > 0) {
+    cleaned = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+  }
+
+  // Ensure ending period
+  if (!/[.!?]$/.test(cleaned)) {
+    cleaned += '.';
+  }
+
+  return cleaned;
+}
+
+/**
+ * AI 1-Page Resume Condenser
+ * Transforms a multi-page resume into an executive, high-density 1-page document.
+ */
+export async function condenseResumeToOnePage(
+  data: ResumeData,
+  mode: 'balanced' | 'aggressive' = 'balanced'
+): Promise<OnePageCondensationResult> {
+  const originalWordCount = countResumeWords(data);
+  let bulletsTightenedCount = 0;
+  const sectionsOptimized: string[] = [];
+  const details: string[] = [];
+
+  const maxBulletsPerRole = mode === 'aggressive' ? 3 : 4;
+  const maxProjects = mode === 'aggressive' ? 2 : 3;
+
+  // Clone data for manipulation
+  const condensed: ResumeData = JSON.parse(JSON.stringify(data));
+
+  // 1. CONDENSE PROFESSIONAL SUMMARY (Max 2 sentences)
+  if (condensed.summary) {
+    const sentences = condensed.summary
+      .replace(/([.?!])\s*(?=[A-Z])/g, '$1|')
+      .split('|')
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    if (sentences.length > 2) {
+      condensed.summary = `${sentences[0]} ${sentences[1]}`;
+      sectionsOptimized.push('Professional Summary');
+      details.push('Trimmed summary to 2 high-impact executive sentences.');
+    }
+  }
+
+  // 2. CONDENSE WORK EXPERIENCE (Limit bullets per job & strip passive phrasing)
+  if (condensed.experience && condensed.experience.length > 0) {
+    let expChanged = false;
+    condensed.experience = condensed.experience.map((exp) => {
+      let highlights = exp.highlights || [];
+
+      // Sort highlights to keep highest value achievements (with metrics and action verbs)
+      if (highlights.length > maxBulletsPerRole) {
+        expChanged = true;
+        const scored = highlights.map((h, originalIndex) => {
+          let score = 0;
+          if (/\b(\d+%|\$\d+|\d+x|\d+\s*(users|clients|hours|million|billion|k))\b/i.test(h)) score += 10;
+          if (/^[A-Z][a-z]+ed\b/.test(h)) score += 5;
+          return { h, score, originalIndex };
+        });
+
+        // Keep highest scoring bullets, retaining relative original order
+        scored.sort((a, b) => b.score - a.score);
+        const selected = scored.slice(0, maxBulletsPerRole);
+        selected.sort((a, b) => a.originalIndex - b.originalIndex);
+        highlights = selected.map((s) => s.h);
+      }
+
+      // Tighten wording of each bullet
+      const tightenedHighlights = highlights.map((h) => {
+        const t = tightenBulletText(h);
+        if (t !== h) bulletsTightenedCount++;
+        return t;
+      });
+
+      return {
+        ...exp,
+        highlights: tightenedHighlights,
+      };
+    });
+
+    if (expChanged || bulletsTightenedCount > 0) {
+      sectionsOptimized.push('Work Experience');
+      details.push(`Capped experience to top ${maxBulletsPerRole} impact bullets per role, eliminating passive fluff.`);
+    }
+  }
+
+  // 3. CONDENSE INTERNSHIPS (if present)
+  if (condensed.internships && condensed.internships.length > 0) {
+    condensed.internships = condensed.internships.map((intern) => ({
+      ...intern,
+      highlights: (intern.highlights || []).slice(0, 2).map((h) => tightenBulletText(h)),
+    }));
+    sectionsOptimized.push('Internships');
+  }
+
+  // 4. CONDENSE PROJECTS (Keep top impressive projects & 1-sentence descriptions)
+  if (condensed.projects && condensed.projects.length > 0) {
+    if (condensed.projects.length > maxProjects) {
+      condensed.projects = condensed.projects.slice(0, maxProjects);
+      sectionsOptimized.push('Key Projects');
+      details.push(`Prioritized top ${maxProjects} flagship projects with concise 1-sentence descriptions.`);
+    }
+
+    condensed.projects = condensed.projects.map((proj) => {
+      let desc = proj.description || '';
+      const firstSentence = desc.split(/[.?!]\s+/)[0];
+      if (firstSentence && firstSentence.length < desc.length) {
+        desc = `${firstSentence}.`;
+      }
+      return {
+        ...proj,
+        description: desc,
+        technologies: (proj.technologies || []).slice(0, 5),
+      };
+    });
+  }
+
+  // 5. COMPACT SKILLS MATRIX (Group into 3-4 essential categories)
+  if (condensed.skills && condensed.skills.length > 4) {
+    condensed.skills = condensed.skills.slice(0, 4);
+    sectionsOptimized.push('Skills Matrix');
+    details.push('Consolidated technical skills into 4 core high-impact categories.');
+  }
+
+  // 6. TRIM SECONDARY SECTIONS
+  if (condensed.certifications && condensed.certifications.length > 4) {
+    condensed.certifications = condensed.certifications.slice(0, 4);
+    sectionsOptimized.push('Certifications');
+  }
+
+  const newWordCount = countResumeWords(condensed);
+  const wordsReduced = Math.max(0, originalWordCount - newWordCount);
+  const percentReduction = originalWordCount > 0 ? Math.round((wordsReduced / originalWordCount) * 100) : 0;
+
+  return {
+    condensedData: condensed,
+    summaryOfChanges: {
+      wordsReduced,
+      originalWordCount,
+      newWordCount,
+      percentReduction,
+      bulletsTightened: bulletsTightenedCount,
+      sectionsOptimized: Array.from(new Set(sectionsOptimized)),
+      details,
+    },
+  };
+}
+
 

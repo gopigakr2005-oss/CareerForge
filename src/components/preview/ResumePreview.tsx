@@ -23,10 +23,12 @@ import {
   Download,
   Loader2,
   Save,
+  Sparkles,
 } from 'lucide-react';
 import { resumeDataToText } from '../../services/atsAnalyzer';
 import html2canvas from 'html2canvas-pro';
 import { jsPDF } from 'jspdf';
+import { AiOnePageModal } from '../modals/AiOnePageModal';
 
 interface Props {
   data: ResumeData;
@@ -44,6 +46,7 @@ export const ResumePreview: React.FC<Props> = ({ data, theme, onThemeChange, onU
   const [previewMode, setPreviewMode] = useState<'desktop' | 'mobile'>('desktop');
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [showToolsBar, setShowToolsBar] = useState<boolean>(true);
+  const [isAiOnePageModalOpen, setIsAiOnePageModalOpen] = useState<boolean>(false);
   const resumeRef = useRef<HTMLDivElement>(null);
   const pdfCaptureRef = useRef<HTMLDivElement>(null);
 
@@ -362,6 +365,17 @@ export const ResumePreview: React.FC<Props> = ({ data, theme, onThemeChange, onU
               </button>
             )}
 
+            {/* AI 1-Page Condenser Button */}
+            <button
+              onClick={() => setIsAiOnePageModalOpen(true)}
+              className="flex items-center gap-1.5 text-xs font-bold bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 hover:from-purple-500 hover:to-indigo-500 text-white px-3 py-1.5 rounded-lg shadow-md transition cursor-pointer border border-purple-400/30"
+              title="Transform a 2-page resume into an executive, high-impact 1-page resume using AI"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
+              <span className="hidden sm:inline">AI 1-Page Condenser</span>
+              <span className="text-[10px] bg-white/20 px-1 py-0.2 rounded font-mono font-bold">2P➔1P</span>
+            </button>
+
             {/* Direct High-DPI Download PDF (Guarantees no paragraph elimination) */}
             <button
               onClick={handleDownloadDirectPdf}
@@ -397,6 +411,16 @@ export const ResumePreview: React.FC<Props> = ({ data, theme, onThemeChange, onU
               >
                 <Minimize2 className="w-3 h-3" />
                 <span>Fit to 1 Page</span>
+              </button>
+
+              {/* AI 1-Page Quick Condenser */}
+              <button
+                onClick={() => setIsAiOnePageModalOpen(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-md border border-purple-400/40 text-xs font-semibold shadow-xs transition cursor-pointer"
+                title="AI automatically trims fluff, condenses bullets and fits your resume to 1 page"
+              >
+                <Sparkles className="w-3 h-3 text-amber-300" />
+                <span>AI Condense (2P ➔ 1P)</span>
               </button>
 
               {/* Text Alignment */}
@@ -513,6 +537,14 @@ export const ResumePreview: React.FC<Props> = ({ data, theme, onThemeChange, onU
             </div>
             <div className="flex items-center gap-2">
               <button
+                onClick={() => setIsAiOnePageModalOpen(true)}
+                className="flex items-center gap-1.5 text-xs bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 hover:from-purple-500 hover:to-indigo-500 text-white px-3 py-1.5 rounded-lg font-medium shadow cursor-pointer border border-purple-400/30"
+                title="Transform 2-page resume into 1 page using AI"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
+                <span>AI 1-Page Fit</span>
+              </button>
+              <button
                 onClick={handleDownloadDirectPdf}
                 disabled={isDownloadingPdf}
                 className="flex items-center gap-1.5 text-xs bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-3.5 py-1.5 rounded-lg font-medium shadow cursor-pointer"
@@ -541,6 +573,18 @@ export const ResumePreview: React.FC<Props> = ({ data, theme, onThemeChange, onU
           </div>
         </div>
       )}
+
+      {/* AI 1-Page Condenser Modal */}
+      <AiOnePageModal
+        isOpen={isAiOnePageModalOpen}
+        onClose={() => setIsAiOnePageModalOpen(false)}
+        data={data}
+        theme={theme}
+        onApply={(condensedData, updatedTheme) => {
+          onUpdateData?.(condensedData);
+          onThemeChange?.(updatedTheme);
+        }}
+      />
     </>
   );
 };
